@@ -51,8 +51,8 @@ app.post("/webhook", async (req, res) => {
           continue;
         }
 
-        // Save incoming message to history
-        if (messageText) {
+        // Save incoming message to history (only non-empty text)
+        if (messageText && messageText.trim()) {
           await saveMessage(client.id, senderId, "user", messageText);
         }
 
@@ -188,7 +188,7 @@ async function getConversationHistory(clientId, customerIgId) {
     .eq("customer_ig_id", customerIgId)
     .order("created_at", { ascending: false })
     .limit(8);
-  return (data || []).reverse(); // oldest first for Claude
+  return (data || []).reverse().filter(m => m.content && m.content.trim()); // oldest first, no empty messages
 }
 
 // ── Handle post link query ────────────────────────────────────────────────────
