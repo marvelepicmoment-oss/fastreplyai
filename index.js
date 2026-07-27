@@ -104,7 +104,11 @@ app.post("/webhook", async (req, res) => {
           continue;
         }
 
-        // General question — reply with AI
+        // General question — reply with AI (only if there is actual text)
+        if (!messageText || !messageText.trim()) {
+          console.log(`Skipping empty message from ${senderId}`);
+          continue;
+        }
         await handleGeneralQuery(senderId, client, messageText);
       }
     }
