@@ -65,28 +65,33 @@ app.post("/webhook", async (req, res) => {
   }
 });
 
-// ── Generate reply using Gemini ───────────────────────────────────────────────
+// ── Generate reply using Claude ───────────────────────────────────────────────
 async function generateReply(userMessage) {
   try {
     const response = await axios.post(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_API_KEY}`,
+      `https://claude.gg/v1/chat/completions`,
       {
-        contents: [
+        model: "claude-sonnet-4-6",
+        max_tokens: 150,
+        messages: [
           {
-            parts: [
-              {
-                text: `${BRAND_CONTEXT}\n\nUser message: "${userMessage}"\n\nWrite a reply:`
-              }
-            ]
+            role: "user",
+            content: `${BRAND_CONTEXT}\n\nUser message: "${userMessage}"\n\nWrite a reply:`
           }
         ]
+      },
+      {
+        headers: {
+          "Authorization": `Bearer ${process.env.CLAUDE_API_KEY}`,
+          "Content-Type": "application/json"
+        }
       }
     );
-    const reply = response.data.candidates[0].content.parts[0].text.trim();
-    console.log(`Gemini reply: ${reply}`);
+    const reply = response.data.choices[0].message.content.trim();
+    console.log(`Claude reply: ${reply}`);
     return reply;
   } catch (err) {
-    console.error("Gemini error:", err.response?.data || err.message);
+    console.error("Claude error:", err.response?.data || err.message);
     return "Thanks for your message! We'll get back to you shortly. 😊";
   }
 }
