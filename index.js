@@ -203,6 +203,8 @@ async function getConversationHistory(clientId, customerIgId) {
     .select("role, content")
     .eq("client_id", clientId)
     .eq("customer_ig_id", customerIgId)
+    .neq("content", "")
+    .not("content", "is", null)
     .order("created_at", { ascending: false })
     .limit(8);
   return (data || []).reverse().filter(m => m.content && m.content.trim()); // oldest first, no empty messages
