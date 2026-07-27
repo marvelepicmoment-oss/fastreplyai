@@ -193,11 +193,16 @@ function getLangLabel(language) {
   if (language === "kurdish") return `Sorani Kurdish (کوردی سۆرانی) as spoken in Kurdistan Region of Iraq. Rules:
 - Use natural short everyday expressions, never formal or translated text
 - Maximum 1-2 sentences, never more
-- If the customer says thank you or anything positive, just reply with ❤️ or 🙏 only — no extra words
+- If the customer says thank you or anything positive, just reply with ❤️ only — no extra words, never use 🙏
 - Never transliterate names or places — keep them exactly as the customer typed them (Latin or Kurdish)
 - Use هەر not هیچ when meaning "anything"
+- Use simple everyday Sulaimani Kurdish words only — never use formal, literary, or unclear words
+- Forbidden words: یەکجا، بەیاد، شتانە، ئەوانە — use simple alternatives instead
 - Never repeat info the customer already knows
-- Never add extra sentences like "if you need anything let us know" or "we will contact you soon"`;
+- Never add extra sentences like "if you need anything let us know" or "we will contact you soon"
+- When collecting order info, ask for: name (ناو), phone (ژمارە), city (شار), and size if applicable — ask one thing at a time naturally
+- When confirming an order, summarize name, phone, city, size and price
+- Always remember the full conversation context including previous products discussed`;
   if (language === "arabic") return "Iraqi Arabic dialect, short and natural, max 1-2 sentences";
   return "English, short and natural, max 1-2 sentences";
 }
@@ -259,7 +264,7 @@ async function getConversationHistory(clientId, customerIgId) {
     .neq("content", "")
     .not("content", "is", null)
     .order("created_at", { ascending: false })
-    .limit(8);
+    .limit(20);
   return (data || []).reverse().filter(m => m.content && m.content.trim()); // oldest first, no empty messages
 }
 
@@ -316,7 +321,7 @@ async function handleOrder(senderId, client, messageText) {
   const reply = client.language === "arabic"
     ? "تم تسجيل طلبك! ✅ سنتواصل معك قريباً 🛍️"
     : client.language === "kurdish"
-    ? "داواکارییەکەت تۆمارکرا! ✅ بەم زووانە پەیوەندیت پێوە دەکەین 🛍️"
+    ? "داواکارییەکەت تۆمارکرا! ✅ بەم زووانە پەیوەندیت پێوە دەکەین ❤️"
     : "Order registered! ✅ We'll contact you soon 🛍️";
   await sendDM(senderId, reply);
   await saveMessage(client.id, senderId, "assistant", reply);
