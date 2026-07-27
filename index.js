@@ -188,9 +188,16 @@ function isOrderIntent(text) {
 
 // ── Language label for prompts ────────────────────────────────────────────────
 function getLangLabel(language) {
-  if (language === "kurdish") return "Sorani Kurdish (کوردی سۆرانی) as spoken in Kurdistan Region of Iraq. Use natural everyday expressions, not formal or translated text.";
-  if (language === "arabic") return "Iraqi Arabic (عربی عراقی)";
-  return "English";
+  if (language === "kurdish") return `Sorani Kurdish (کوردی سۆرانی) as spoken in Kurdistan Region of Iraq. Rules:
+- Use natural short everyday expressions, never formal or translated text
+- Maximum 1-2 sentences, never more
+- If the customer says thank you or anything positive, just reply with ❤️ or 🙏 only — no extra words
+- Never transliterate names or places — keep them exactly as the customer typed them (Latin or Kurdish)
+- Use هەر not هیچ when meaning "anything"
+- Never repeat info the customer already knows
+- Never add extra sentences like "if you need anything let us know" or "we will contact you soon"`;
+  if (language === "arabic") return "Iraqi Arabic dialect, short and natural, max 1-2 sentences";
+  return "English, short and natural, max 1-2 sentences";
 }
 
 // ── Get client from DB by Instagram user ID ───────────────────────────────────
@@ -305,10 +312,10 @@ async function handleImageQuery(senderId, client, imageUrl, messageText) {
 // ── Handle order intent ───────────────────────────────────────────────────────
 async function handleOrder(senderId, client, messageText) {
   const reply = client.language === "arabic"
-    ? "تم تسجيل طلبك بنجاح! ✅ سنتواصل معك قريباً لتأكيد العنوان والتوصيل 🛍️"
+    ? "تم تسجيل طلبك! ✅ سنتواصل معك قريباً 🛍️"
     : client.language === "kurdish"
-    ? "داواکارییەکەت تۆمارکرا! ✅ بەم زووانە پەیوەندیت پێوە دەکەین بۆ ناونیشان و گەیاندن 🛍️"
-    : "Your order has been registered! ✅ We'll contact you soon to confirm your address and delivery 🛍️";
+    ? "داواکارییەکەت تۆمارکرا! ✅ بەم زووانە پەیوەندیت پێوە دەکەین 🛍️"
+    : "Order registered! ✅ We'll contact you soon 🛍️";
   await sendDM(senderId, reply);
   await saveMessage(client.id, senderId, "assistant", reply);
   await saveOrder(client.id, senderId, null, "ordered");
@@ -332,25 +339,19 @@ async function handleGeneralQuery(senderId, client, messageText) {
 // ── Format product reply ──────────────────────────────────────────────────────
 function formatProductReply(product, language) {
   if (language === "arabic") {
-    let msg = `${product.product_name} 🛍️\nالسعر: ${product.price} ${product.currency}`;
-    if (product.colors) msg += `\nالألوان: ${product.colors}`;
+    let msg = `سلام! السعر ${product.price} دينار`;
     if (product.sizes) msg += `\nالمقاسات: ${product.sizes}`;
-    if (product.description) msg += `\n${product.description}`;
-    msg += "\n\nهل تريد الطلب؟ 😊";
+    if (product.colors) msg += `\nالألوان: ${product.colors}`;
     return msg;
   } else if (language === "kurdish") {
-    let msg = `${product.product_name} 🛍️\nنرخ: ${product.price} ${product.currency}`;
-    if (product.colors) msg += `\nڕەنگەکان: ${product.colors}`;
+    let msg = `سڵاو! بەرێزم نرخی ${Number(product.price).toLocaleString("ar-EG")} هەزارەی عێراقی`;
     if (product.sizes) msg += `\nقەبارەکان: ${product.sizes}`;
-    if (product.description) msg += `\n${product.description}`;
-    msg += "\n\nدەتەوێت داواکاری بکەیت؟ 😊";
+    if (product.colors) msg += `\nڕەنگەکان: ${product.colors}`;
     return msg;
   } else {
-    let msg = `${product.product_name} 🛍️\nPrice: ${product.price} ${product.currency}`;
-    if (product.colors) msg += `\nColors: ${product.colors}`;
+    let msg = `Hi! The price is ${product.price} ${product.currency}`;
     if (product.sizes) msg += `\nSizes: ${product.sizes}`;
-    if (product.description) msg += `\n${product.description}`;
-    msg += "\n\nWould you like to order? 😊";
+    if (product.colors) msg += `\nColors: ${product.colors}`;
     return msg;
   }
 }
