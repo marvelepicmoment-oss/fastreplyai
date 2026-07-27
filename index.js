@@ -51,6 +51,22 @@ app.post("/webhook", async (req, res) => {
           continue;
         }
 
+        // Save incoming message to history
+        if (messageText) {
+          await saveMessage(client.id, senderId, "user", messageText);
+        }
+
+        // Check if message is a shared Instagram post (via share button)
+        const sharedPost = attachments.find(a => a.type === "share" && a.payload?.url);
+        if (sharedPost) {
+          console.log("Shared post URL:", sharedPost.payload.url);
+          const postId = extractPostId(sharedPost.payload.url);
+          if (postId) {
+            await handlePostLinkQuery(senderId, client, postId);
+            continue;
+          }
+        }
+
         // Check if customer wants to order
         if (isOrderIntent(messageText)) {
           await handleOrder(senderId, client, messageText);
@@ -64,7 +80,7 @@ app.post("/webhook", async (req, res) => {
           continue;
         }
 
-        // Check if message has an Instagram post link
+        // Check if message has an Instagram post link (typed/pasted)
         const postId = extractPostId(messageText);
         if (postId) {
           await handlePostLinkQuery(senderId, client, postId);
@@ -84,7 +100,7 @@ app.post("/webhook", async (req, res) => {
           console.log(`Comment: ${comment.text}`);
           const client = await getClientByIgUserId(entry.id);
           if (!client) continue;
-          const reply = await generateReply(comment.text, client, "comment");
+          const reply = await generateCommentReply(comment.text, client);
           await replyToComment(comment.id, reply);
         }
       }
@@ -104,9 +120,16 @@ function isOrderIntent(text) {
     "اريد اشتري", "أريد أشتري", "ابي اشتري", "أبي أشتري",
     "اريد احجز", "أريد أحجز", "بدي اشتري", "حجز", "طلب",
     "i want to buy", "i want to order", "i'll take it", "i want this",
-    "دەمەوێت بیکڕم", "دەمەوێت", "کڕین"
+    "دەمەوێت بیکڕم", "دەمەوێت بیکڕێت", "کڕینەکەم", "دەیکڕم"
   ];
   return orderKeywords.some(k => text.toLowerCase().includes(k.toLowerCase()));
+}
+
+// ── Language label for prompts ────────────────────────────────────────────────
+function getLangLabel(language) {
+  if (language === "kurdish") return "Sorani Kurdish (کوردی سۆرانی) as spoken in Kurdistan Region of Iraq. Use natural everyday expressions, not formal or translated text.";
+  if (language === "arabic") return "Iraqi Arabic (عربی عراقی)";
+  return "English";
 }
 
 // ── Get client from DB by Instagram user ID ───────────────────────────────────
@@ -145,21 +168,45 @@ async function getProductByPostId(clientId, postId) {
   return data;
 }
 
+// ── Save message to conversation history ──────────────────────────────────────
+async function saveMessage(clientId, customerIgId, role, content) {
+  const { error } = await supabase.from("messages").insert({
+    client_id: clientId,
+    customer_ig_id: customerIgId,
+    role: role,
+    content: content
+  });
+  if (error) console.error("Save message error:", error.message);
+}
+
+// ── Get conversation history (last 8 messages) ────────────────────────────────
+async function getConversationHistory(clientId, customerIgId) {
+  const { data } = await supabase
+    .from("messages")
+    .select("role, content")
+    .eq("client_id", clientId)
+    .eq("customer_ig_id", customerIgId)
+    .order("created_at", { ascending: false })
+    .limit(8);
+  return (data || []).reverse(); // oldest first for Claude
+}
+
 // ── Handle post link query ────────────────────────────────────────────────────
 async function handlePostLinkQuery(senderId, client, postId) {
   const product = await getProductByPostId(client.id, postId);
   if (product) {
     const reply = formatProductReply(product, client.language);
     await sendDM(senderId, reply);
+    await saveMessage(client.id, senderId, "assistant", reply);
     await saveOrder(client.id, senderId, product.id, "interested");
   } else {
-    // Product not in DB — flag for human
     const reply = client.language === "arabic"
       ? "شكراً! سأتحقق من السعر وأعود إليك قريباً ⏳"
       : client.language === "kurdish"
-      ? "سپاس! نرخەکە دەبینم و زوو دەگەڕێمەوە ⏳"
+      ? "سپاس! نرخەکە دەبینم و زوو وەڵامت دەدەمەوە ⏳"
       : "Thanks! Let me check on that and get back to you shortly ⏳";
     await sendDM(senderId, reply);
+    await saveMessage(client.id, senderId, "assistant", reply);
     await flagForHumanReply(client.id, senderId, "Post not found in database");
   }
 }
@@ -176,21 +223,15 @@ async function handleImageQuery(senderId, client, imageUrl, messageText) {
     `- ${p.product_name}: ${p.price} ${p.currency}${p.colors ? ", Colors: " + p.colors : ""}${p.sizes ? ", Sizes: " + p.sizes : ""}`
   ).join("\n");
 
-  const prompt = `You are a shopping assistant. A customer sent an image of a product they're interested in from an Instagram shop.
+  const systemPrompt = `You are a helpful shopping assistant for ${client.shop_name}, an Instagram shop. Always reply in ${getLangLabel(client.language)}. Be warm, friendly, and natural. Keep replies under 3 sentences.`;
 
-Here are the shop's recent products:
-${productList}
+  const userContent = `A customer sent an image. Here are the shop's products:\n${productList}\n\nBased on image URL (${imageUrl}) and message "${messageText}", match to a product and reply with price and details. If no match, say you will check and get back to them.`;
 
-Based on the image URL (${imageUrl}) and the customer's message "${messageText}", try to match it to one of the products above.
-
-If you find a match, reply naturally in ${client.language} with the price and details.
-If you cannot match it, reply saying you'll check and get back to them.
-Keep reply under 3 sentences. Be friendly and warm.`;
-
-  const reply = await callClaude(prompt);
+  const history = await getConversationHistory(client.id, senderId);
+  const reply = await callClaude(systemPrompt, [...history, { role: "user", content: userContent }]);
   await sendDM(senderId, reply);
+  await saveMessage(client.id, senderId, "assistant", reply);
 
-  // If reply contains uncertainty, flag for human
   if (reply.includes("check") || reply.includes("get back") || reply.includes("أتحقق") || reply.includes("دەبینم")) {
     await flagForHumanReply(client.id, senderId, "Image not matched to product");
   } else {
@@ -203,9 +244,10 @@ async function handleOrder(senderId, client, messageText) {
   const reply = client.language === "arabic"
     ? "تم تسجيل طلبك بنجاح! ✅ سنتواصل معك قريباً لتأكيد العنوان والتوصيل 🛍️"
     : client.language === "kurdish"
-    ? "داواکارییەکەت تۆمارکرا! ✅ زوو پەیوەندیت پێوە دەکەین بۆ ناونیشان و گەیاندن 🛍️"
+    ? "داواکارییەکەت تۆمارکرا! ✅ بەم زووانە پەیوەندیت پێوە دەکەین بۆ ناونیشان و گەیاندن 🛍️"
     : "Your order has been registered! ✅ We'll contact you soon to confirm your address and delivery 🛍️";
   await sendDM(senderId, reply);
+  await saveMessage(client.id, senderId, "assistant", reply);
   await saveOrder(client.id, senderId, null, "ordered");
 }
 
@@ -213,16 +255,15 @@ async function handleOrder(senderId, client, messageText) {
 async function handleGeneralQuery(senderId, client, messageText) {
   const products = await getRecentProducts(client.id);
   const productContext = products.length > 0
-    ? `Recent products:\n${products.map(p => `- ${p.product_name}: ${p.price} ${p.currency}`).join("\n")}`
+    ? `Shop products:\n${products.map(p => `- ${p.product_name}: ${p.price} ${p.currency}`).join("\n")}`
     : "";
 
-  const prompt = `You are a friendly assistant for ${client.shop_name}, an Instagram shop.
-${productContext}
-Reply to this customer message in ${client.language}: "${messageText}"
-Keep it under 3 sentences. Be warm and helpful.`;
+  const systemPrompt = `You are a friendly assistant for ${client.shop_name}, an Instagram shop. Always reply in ${getLangLabel(client.language)}. Be warm, natural, and helpful. Keep replies under 3 sentences.${productContext ? "\n\n" + productContext : ""}`;
 
-  const reply = await callClaude(prompt);
+  const history = await getConversationHistory(client.id, senderId);
+  const reply = await callClaude(systemPrompt, [...history, { role: "user", content: messageText }]);
   await sendDM(senderId, reply);
+  await saveMessage(client.id, senderId, "assistant", reply);
 }
 
 // ── Format product reply ──────────────────────────────────────────────────────
@@ -279,14 +320,17 @@ async function flagForHumanReply(clientId, customerIgId, notes) {
 }
 
 // ── Call Claude API ───────────────────────────────────────────────────────────
-async function callClaude(prompt) {
+async function callClaude(systemPrompt, messages) {
   try {
     const response = await axios.post(
       "https://claude.gg/v1/chat/completions",
       {
         model: "claude-sonnet-4-6",
         max_tokens: 200,
-        messages: [{ role: "user", content: prompt }]
+        messages: [
+          { role: "system", content: systemPrompt },
+          ...messages
+        ]
       },
       {
         headers: {
@@ -303,11 +347,9 @@ async function callClaude(prompt) {
 }
 
 // ── Generate reply for comments ───────────────────────────────────────────────
-async function generateReply(message, client, type) {
-  const prompt = `You are a friendly assistant for ${client.shop_name}.
-Reply to this Instagram ${type} in ${client.language}: "${message}"
-Keep it under 2 sentences. Be warm and engaging.`;
-  return await callClaude(prompt);
+async function generateCommentReply(message, client) {
+  const systemPrompt = `You are a friendly assistant for ${client.shop_name} on Instagram. Reply in ${getLangLabel(client.language)}. Keep it under 2 sentences. Be warm and engaging.`;
+  return await callClaude(systemPrompt, [{ role: "user", content: message }]);
 }
 
 // ── Send DM ───────────────────────────────────────────────────────────────────
