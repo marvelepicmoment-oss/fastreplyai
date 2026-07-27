@@ -15,6 +15,17 @@ const PORT = process.env.PORT || 3000;
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 
+// ── Deduplication — ignore duplicate webhook events ───────────────────────────
+const processedMids = new Set();
+function isDuplicate(mid) {
+  if (!mid) return false;
+  if (processedMids.has(mid)) return true;
+  processedMids.add(mid);
+  // Keep set small — remove after 5 minutes
+  setTimeout(() => processedMids.delete(mid), 5 * 60 * 1000);
+  return false;
+}
+
 // ── Webhook verification ──────────────────────────────────────────────────────
 app.get("/webhook", (req, res) => {
   const mode = req.query["hub.mode"];
@@ -38,6 +49,12 @@ app.post("/webhook", async (req, res) => {
     // Handle DMs
     for (const event of entry.messaging || []) {
       if (event.message && !event.message.is_echo) {
+        const mid = event.message.mid;
+        if (isDuplicate(mid)) {
+          console.log(`Skipping duplicate message: ${mid}`);
+          continue;
+        }
+
         const senderId = event.sender.id;
         const messageText = event.message.text || "";
         const attachments = event.message.attachments || [];
