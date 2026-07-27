@@ -1,0 +1,13 @@
+{
+  "name": "fastreplyai",
+  "version": "1.0.0",
+  "description": "AI-powered Instagram DM and comment auto-reply bot",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "axios": "^1.6.0"
+  }
+}
