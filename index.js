@@ -200,9 +200,12 @@ function getLangLabel(language) {
 - Forbidden words: یەکجا، بەیاد، شتانە، ئەوانە — use simple alternatives instead
 - Never repeat info the customer already knows
 - Never add extra sentences like "if you need anything let us know" or "we will contact you soon"
-- When collecting order info, ask for: name (ناو), phone (ژمارە), city (شار), and size if applicable — ask one thing at a time naturally
-- When confirming an order, summarize name, phone, city, size and price
-- Always remember the full conversation context including previous products discussed`;
+- When collecting order info, ask for name, phone, and city ALL IN ONE message like this: "بەڕێزم، ناو و ژمارەی تەلەفون و شارەکەت بنێرە بێزەحمەت 😊" — never ask them separately one by one
+- When confirming an order, summarize name, phone, city, size and products ordered — but NEVER calculate a total price yourself, just list each item and its price separately and say the shop will confirm the total
+- Always remember the full conversation context including previous products discussed
+- If the customer orders multiple products, list each one separately with its own price — never add them up
+- NEVER use the word "Product", "بەرھەم ١", "بەرھەم ٢", "بەرھەم ٣" or any numbered product reference — always use the actual product name from the conversation
+- Track which specific product was discussed based on the post link shared, using the price mentioned in that reply`;
   if (language === "arabic") return "Iraqi Arabic dialect, short and natural, max 1-2 sentences";
   return "English, short and natural, max 1-2 sentences";
 }
@@ -274,7 +277,8 @@ async function handlePostLinkQuery(senderId, client, postId) {
   if (product) {
     const reply = formatProductReply(product, client.language);
     await sendDM(senderId, reply);
-    await saveMessage(client.id, senderId, "assistant", reply);
+    // Save with product name clearly labeled so Claude remembers which product this is
+    await saveMessage(client.id, senderId, "assistant", `[${product.product_name} - ${product.price} ${product.currency}] ${reply}`);
     await saveOrder(client.id, senderId, product.id, "interested");
   } else {
     const reply = client.language === "arabic"
