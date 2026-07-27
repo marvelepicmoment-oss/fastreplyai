@@ -74,7 +74,7 @@ app.post("/webhook", async (req, res) => {
         }
 
         // Check if message is a shared Instagram post (via share button)
-        const sharedPost = attachments.find(a => a.type === "ig_post" || a.type === "share");
+        const sharedPost = attachments.find(a => a.type === "ig_post" || a.type === "ig_reel" || a.type === "share");
         if (sharedPost) {
           const attachUrl = sharedPost.payload?.url || "";
           console.log("Shared post attachment:", sharedPost.type, attachUrl);
@@ -154,9 +154,9 @@ app.post("/webhook", async (req, res) => {
   }
 });
 
-// ── Extract Instagram post ID from URL ────────────────────────────────────────
+// ── Extract Instagram post/reel ID from URL ───────────────────────────────────
 function extractPostId(text) {
-  const match = text.match(/instagram\.com\/p\/([A-Za-z0-9_-]+)/);
+  const match = text.match(/instagram\.com\/(?:p|reel)\/([A-Za-z0-9_-]+)/);
   return match ? match[1] : null;
 }
 
