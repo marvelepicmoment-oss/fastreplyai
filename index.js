@@ -181,7 +181,9 @@ function isOrderIntent(text) {
     "اريد اشتري", "أريد أشتري", "ابي اشتري", "أبي أشتري",
     "اريد احجز", "أريد أحجز", "بدي اشتري", "حجز", "طلب",
     "i want to buy", "i want to order", "i'll take it", "i want this",
-    "دەمەوێت بیکڕم", "دەمەوێت بیکڕێت", "کڕینەکەم", "دەیکڕم"
+    "دەمەوێت بیکڕم", "دەمەوێت بیکڕێت", "کڕینەکەم", "دەیکڕم",
+    "danam bo dani", "danam", "bom bda", "bom bna", "order", "dakam",
+    "dabi", "wam bda", "wam bdn", "bo dani", "bkrem"
   ];
   return orderKeywords.some(k => text.toLowerCase().includes(k.toLowerCase()));
 }
@@ -344,7 +346,7 @@ function formatProductReply(product, language) {
     if (product.colors) msg += `\nالألوان: ${product.colors}`;
     return msg;
   } else if (language === "kurdish") {
-    let msg = `سڵاو! بەرێزم نرخی ${Number(product.price).toLocaleString("ar-EG")} هەزارەی عێراقی`;
+    let msg = `سڵاو! بەرێزم نرخی ${Number(product.price).toLocaleString("ar-EG")} هەزارە`;
     if (product.sizes) msg += `\nقەبارەکان: ${product.sizes}`;
     if (product.colors) msg += `\nڕەنگەکان: ${product.colors}`;
     return msg;
