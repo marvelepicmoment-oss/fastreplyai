@@ -106,6 +106,17 @@ app.post("/webhook", async (req, res) => {
 
         // General question — reply with AI (only if there is actual text)
         if (!messageText || !messageText.trim()) {
+          // Maybe it's a shared post with a URL buried in the attachment
+          const anyAttachment = attachments[0];
+          if (anyAttachment) {
+            const attachmentUrl = anyAttachment.payload?.url || anyAttachment.payload?.src || "";
+            console.log(`Empty text, attachment type: ${anyAttachment.type}, url: ${attachmentUrl}`);
+            const sharedPostId = extractPostId(attachmentUrl);
+            if (sharedPostId) {
+              await handlePostLinkQuery(senderId, client, sharedPostId);
+              continue;
+            }
+          }
           console.log(`Skipping empty message from ${senderId}`);
           continue;
         }
