@@ -74,13 +74,27 @@ app.post("/webhook", async (req, res) => {
         }
 
         // Check if message is a shared Instagram post (via share button)
-        const sharedPost = attachments.find(a => a.type === "share" && a.payload?.url);
+        const sharedPost = attachments.find(a => a.type === "ig_post" || a.type === "share");
         if (sharedPost) {
-          console.log("Shared post URL:", sharedPost.payload.url);
-          const postId = extractPostId(sharedPost.payload.url);
-          if (postId) {
-            await handlePostLinkQuery(senderId, client, postId);
+          const attachUrl = sharedPost.payload?.url || "";
+          console.log("Shared post attachment:", sharedPost.type, attachUrl);
+
+          // Try direct URL match first
+          const directPostId = extractPostId(attachUrl);
+          if (directPostId) {
+            await handlePostLinkQuery(senderId, client, directPostId);
             continue;
+          }
+
+          // Extract asset_id from CDN URL and resolve via Instagram API
+          const assetMatch = attachUrl.match(/asset_id=(\d+)/);
+          if (assetMatch) {
+            const mediaId = assetMatch[1];
+            const shortcode = await getShortcodeFromMediaId(mediaId);
+            if (shortcode) {
+              await handlePostLinkQuery(senderId, client, shortcode);
+              continue;
+            }
           }
         }
 
@@ -144,6 +158,21 @@ app.post("/webhook", async (req, res) => {
 function extractPostId(text) {
   const match = text.match(/instagram\.com\/p\/([A-Za-z0-9_-]+)/);
   return match ? match[1] : null;
+}
+
+// ── Resolve Instagram media ID to post shortcode ──────────────────────────────
+async function getShortcodeFromMediaId(mediaId) {
+  try {
+    const res = await axios.get(
+      `https://graph.instagram.com/v21.0/${mediaId}`,
+      { params: { fields: "shortcode", access_token: IG_ACCESS_TOKEN } }
+    );
+    console.log("Resolved shortcode:", res.data.shortcode);
+    return res.data.shortcode || null;
+  } catch (err) {
+    console.error("Shortcode lookup error:", err.response?.data || err.message);
+    return null;
+  }
 }
 
 // ── Check if customer wants to buy ───────────────────────────────────────────
