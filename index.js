@@ -163,22 +163,35 @@ function extractPostId(text) {
 // ── Resolve Instagram media ID to post shortcode ──────────────────────────────
 async function getShortcodeFromMediaId(mediaId) {
   try {
+    // Step 1: get shortcode only
     const res = await axios.get(
       `https://graph.instagram.com/v21.0/${mediaId}`,
-      { params: { fields: "shortcode,carousel_parent_id", access_token: IG_ACCESS_TOKEN } }
+      { params: { fields: "shortcode", access_token: IG_ACCESS_TOKEN } }
     );
-    // If this is a carousel child, look up the parent post's shortcode instead
-    if (res.data.carousel_parent_id) {
-      console.log("Carousel child detected, looking up parent:", res.data.carousel_parent_id);
+    const shortcode = res.data.shortcode;
+    console.log("Resolved shortcode:", shortcode);
+    if (!shortcode) return null;
+
+    // Step 2: if product not found later, try carousel parent (separate call)
+    // Store shortcode but also check if this is a carousel child
+    try {
       const parentRes = await axios.get(
-        `https://graph.instagram.com/v21.0/${res.data.carousel_parent_id}`,
-        { params: { fields: "shortcode", access_token: IG_ACCESS_TOKEN } }
+        `https://graph.instagram.com/v21.0/${mediaId}`,
+        { params: { fields: "carousel_parent_id", access_token: IG_ACCESS_TOKEN } }
       );
-      console.log("Resolved parent shortcode:", parentRes.data.shortcode);
-      return parentRes.data.shortcode || null;
+      if (parentRes.data.carousel_parent_id) {
+        console.log("Carousel child, looking up parent:", parentRes.data.carousel_parent_id);
+        const parentShortcodeRes = await axios.get(
+          `https://graph.instagram.com/v21.0/${parentRes.data.carousel_parent_id}`,
+          { params: { fields: "shortcode", access_token: IG_ACCESS_TOKEN } }
+        );
+        console.log("Parent shortcode:", parentShortcodeRes.data.shortcode);
+        return parentShortcodeRes.data.shortcode || shortcode;
+      }
+    } catch (e) {
+      // Not a carousel child — use original shortcode
     }
-    console.log("Resolved shortcode:", res.data.shortcode);
-    return res.data.shortcode || null;
+    return shortcode;
   } catch (err) {
     console.error("Shortcode lookup error:", err.response?.data || err.message);
     return null;
