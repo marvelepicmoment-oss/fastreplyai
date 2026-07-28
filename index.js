@@ -491,28 +491,35 @@ async function handleOrder(senderId, client, messageText) {
     .single();
   const hasPreviousOrder = existingOrder && existingOrder.status === "ordered";
 
-  const systemPrompt = `${cartText ? `⚠️ CURRENT CART (USE ONLY THESE PRICES - IGNORE ALL PRICES IN CONVERSATION HISTORY):\n${cartText}\n\n` : ""}You are a friendly assistant for ${client.shop_name}, an Instagram shop. Always reply in ${getLangLabel(client.language)}.
+  // Calculate total in code — never trust Claude with math
+  const allCartItems = cartItems;
+  const total = allCartItems.reduce((sum, p) => sum + (parseFloat(p.price) || 0) * (p.quantity || 1), 0);
+  const totalText = total > 0 ? `${total.toLocaleString()} هەزار` : "";
+  const itemLines = allCartItems.map(p =>
+    `- ${p.product_name}${p.size ? ` (${p.size})` : ""}: ${p.price} هەزار${p.quantity > 1 ? ` × ${p.quantity}` : ""}`
+  ).join("\n");
 
-The customer wants to place an order.${hasPreviousOrder ? `\n⚠️ THIS CUSTOMER ALREADY HAS A PREVIOUS ORDER. Ask them: "دەتەوێت ئەمەش بخەینە سەر ئەو ئۆردەرەکەی پێشوت؟ یان ناونیشانێکی جیاوازت هەیە؟"` : ""}
+  const systemPrompt = `${cartText ? `⚠️ CURRENT CART:\n${cartText}\nTOTAL (ALREADY CALCULATED FOR YOU): ${totalText}\n\n` : ""}You are a friendly assistant for ${client.shop_name}, an Instagram shop. Always reply in ${getLangLabel(client.language)}.
+
+The customer wants to place an order.${hasPreviousOrder ? `\n⚠️ THIS CUSTOMER ALREADY HAS A PREVIOUS ORDER. You MUST ask: "دەتەوێت ئەمەش لەگەڵ ئەو ئۆردەرەکەی پێشوت یەکبخەین، یان جیاوازی بنێرین؟" — wait for answer before doing anything else.` : ""}
 
 Your job:
-1. If customer has a previous order → ask if same address or different FIRST
-2. ALWAYS ask for size FIRST if not known — NEVER guess size from history: "چ قەبارەیەک دەتەوێت؟ (S، M، L، XL)"
-3. If no name/phone/address yet → ask for ALL THREE in one message: "بەڕێزم، ناو و ژمارەی تەلەفون و ناونیشانەکەت بنێرە بێزەحمەت 😊"
-4. Once you have size, name, phone, address → confirm using EXACTLY this format:
+1. If previous order exists → ask combine or separate FIRST, do nothing else
+2. Ask for size if not known: "چ قەبارەیەک دەتەوێت؟ (S، M، L، XL)" — NEVER guess
+3. If no name/phone/address → ask ALL THREE together: "بەڕێزم، ناو و ژمارەی تەلەفون و ناونیشانەکەت بنێرە بێزەحمەت 😊"
+4. Once you have everything → confirm using EXACTLY this format, no changes:
 داواکارییەکەت وەرگیرا ✅
 ناو: [name]
 ژمارە: [phone]
 ناونیشان: [address]
-[for each item]: بەرهەم: [product name] — قەبارە: [size] — نرخ: [price] هەزار
-کۆی گشتی: [add up ALL item prices and write the total] هەزار ❤️
+${itemLines || "[item lines from cart]"}
+کۆی گشتی: ${totalText || "[total]"} ❤️
 زووترین کاتدا پەیوەندیت پێوە دەکەین 😊
 
 RULES:
-- ONLY use prices from the CART above — never from history
-- DO calculate the total — add all item prices together and show کۆی گشتی
-- Include ALL items (new + previously ordered)
-- NEVER say "the store will calculate" — always calculate it yourself`;
+- Use the EXACT item lines and total provided above — do not recalculate, do not change prices
+- NEVER say "the store will calculate"
+- Include ALL cart items in confirmation`;
 
   const reply = await callClaude(systemPrompt, [...history, { role: "user", content: messageText }]);
   await sendDM(senderId, reply);
