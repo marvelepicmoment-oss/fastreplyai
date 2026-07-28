@@ -467,59 +467,81 @@ async function markCartOrdered(clientId, customerIgId) {
 async function handleOrder(senderId, client, messageText) {
   const history = await getConversationHistory(client.id, senderId);
 
-  // Read cart directly from DB — no guessing from history
+  // Read cart directly from DB
   const cartItems = await getCart(client.id, senderId);
   const newItems = cartItems.filter(p => !p.ordered);
   const prevItems = cartItems.filter(p => p.ordered);
+  const hasPreviousOrder = prevItems.length > 0;
 
-  let cartText = "";
-  if (newItems.length > 0) {
-    cartText += `NEW ITEMS CUSTOMER IS ORDERING NOW (USE THESE PRICES ONLY):\n`;
-    cartText += newItems.map(p => `- ${p.product_name}: ${p.price} ${p.currency}${p.size ? `, size: ${p.size}` : ""}`).join("\n");
-  }
-  if (prevItems.length > 0) {
-    cartText += `\n\nPREVIOUSLY ORDERED ITEMS (already confirmed, include in combined order):\n`;
-    cartText += prevItems.map(p => `- ${p.product_name}: ${p.price} ${p.currency}${p.size ? `, size: ${p.size}` : ""}, qty: ${p.quantity || 1}`).join("\n");
-  }
+  // Calculate totals in code — never let Claude do math
+  const newTotal = newItems.reduce((sum, p) => sum + (parseFloat(p.price) || 0) * (p.quantity || 1), 0);
+  const prevTotal = prevItems.reduce((sum, p) => sum + (parseFloat(p.price) || 0) * (p.quantity || 1), 0);
+  const combinedTotal = newTotal + prevTotal;
 
-  // Check if there's already a completed order
-  const { data: existingOrder } = await supabase
-    .from("orders")
-    .select("status")
-    .eq("client_id", client.id)
-    .eq("customer_ig_id", senderId)
-    .single();
-  const hasPreviousOrder = existingOrder && existingOrder.status === "ordered";
-
-  // Calculate total in code — never trust Claude with math
-  const allCartItems = cartItems;
-  const total = allCartItems.reduce((sum, p) => sum + (parseFloat(p.price) || 0) * (p.quantity || 1), 0);
-  const totalText = total > 0 ? `${total.toLocaleString()} هەزار` : "";
-  const itemLines = allCartItems.map(p =>
-    `- ${p.product_name}${p.size ? ` (${p.size})` : ""}: ${p.price} هەزار${p.quantity > 1 ? ` × ${p.quantity}` : ""}`
+  const newItemLines = newItems.map(p =>
+    `- ${p.product_name}${p.size ? ` (${p.size})` : ""}: ${parseFloat(p.price).toLocaleString()} هەزار`
   ).join("\n");
 
-  const systemPrompt = `${cartText ? `⚠️ CURRENT CART:\n${cartText}\nTOTAL (ALREADY CALCULATED FOR YOU): ${totalText}\n\n` : ""}You are a friendly assistant for ${client.shop_name}, an Instagram shop. Always reply in ${getLangLabel(client.language)}.
+  const prevItemLines = prevItems.map(p =>
+    `- ${p.product_name}${p.size ? ` (${p.size})` : ""}: ${parseFloat(p.price).toLocaleString()} هەزار`
+  ).join("\n");
 
-The customer wants to place an order.${hasPreviousOrder ? `\n⚠️ THIS CUSTOMER ALREADY HAS A PREVIOUS ORDER. You MUST ask: "دەتەوێت ئەمەش لەگەڵ ئەو ئۆردەرەکەی پێشوت یەکبخەین، یان جیاوازی بنێرین؟" — wait for answer before doing anything else.` : ""}
+  const combinedItemLines = cartItems.map(p =>
+    `- ${p.product_name}${p.size ? ` (${p.size})` : ""}: ${parseFloat(p.price).toLocaleString()} هەزار`
+  ).join("\n");
 
-Your job:
-1. If previous order exists → ask combine or separate FIRST, do nothing else
-2. Ask for size if not known: "چ قەبارەیەک دەتەوێت؟ (S، M، L، XL)" — NEVER guess
-3. If no name/phone/address → ask ALL THREE together: "بەڕێزم، ناو و ژمارەی تەلەفون و ناونیشانەکەت بنێرە بێزەحمەت 😊"
-4. Once you have everything → confirm using EXACTLY this format, no changes:
+  const systemPrompt = `You are an order assistant for ${client.shop_name}, an Instagram shop. Reply in ${getLangLabel(client.language)}.
+
+═══════════════════════════════
+CURRENT SITUATION:
+═══════════════════════════════
+NEW PRODUCT CUSTOMER WANTS NOW:
+${newItemLines || "none"}
+New subtotal: ${newTotal.toLocaleString()} هەزار
+
+${hasPreviousOrder ? `PREVIOUSLY ORDERED PRODUCTS (from earlier in this conversation):
+${prevItemLines}
+Previous subtotal: ${prevTotal.toLocaleString()} هەزار
+
+IF COMBINED TOTAL WOULD BE: ${combinedTotal.toLocaleString()} هەزار` : ""}
+
+═══════════════════════════════
+YOUR EXACT STEPS — FOLLOW IN ORDER:
+═══════════════════════════════
+
+STEP 1 — SIZE (if new item has no size yet):
+→ Ask: "چ قەبارەیەک دەتەوێت؟ (S، M، L، XL)"
+→ NEVER skip this. NEVER guess the size from history.
+→ Wait for answer before going to next step.
+
+STEP 2 — COMBINE OR SEPARATE (only if there is a previous order):
+→ Ask: "دەتەوێت ئەمەش لەگەڵ ئەو ئۆردەرەکەی پێشوت یەکبخەین؟ یان جیاوازی بنێرین؟"
+→ Wait for answer before going to next step.
+→ If customer says YES combine → use combined items and ${combinedTotal.toLocaleString()} هەزار as total
+→ If customer says NO separate → use only new items and ${newTotal.toLocaleString()} هەزار as total
+
+STEP 3 — NAME, PHONE, ADDRESS:
+→ If not already given, ask all three in ONE message: "بەڕێزم، ناو و ژمارەی تەلەفون و ناونیشانەکەت بنێرە بێزەحمەت 😊"
+→ If combining with previous order and address already known, ask: "ئایا ناونیشانەکەت هەمان شوێنەی پێشووە؟"
+
+STEP 4 — CONFIRM ORDER (only when you have: size + combine decision + name + phone + address):
+→ Send EXACTLY this, nothing more, nothing less:
 داواکارییەکەت وەرگیرا ✅
-ناو: [name]
-ژمارە: [phone]
-ناونیشان: [address]
-${itemLines || "[item lines from cart]"}
-کۆی گشتی: ${totalText || "[total]"} ❤️
+ناو: [name as typed]
+ژمارە: [phone as typed]
+ناونیشان: [address as typed]
+[paste the exact item lines for this order]
+کۆی گشتی: [the exact total number calculated above] هەزار ❤️
 زووترین کاتدا پەیوەندیت پێوە دەکەین 😊
 
-RULES:
-- Use the EXACT item lines and total provided above — do not recalculate, do not change prices
-- NEVER say "the store will calculate"
-- Include ALL cart items in confirmation`;
+═══════════════════════════════
+STRICT RULES:
+═══════════════════════════════
+- Do ONE step at a time. Do not skip steps.
+- NEVER guess size from conversation history — always ask.
+- NEVER recalculate prices — use the exact numbers given above.
+- NEVER say "the store will contact you" or "the store will calculate".
+- Keep replies short — 1-2 sentences max per step except the final confirmation.`;
 
   const reply = await callClaude(systemPrompt, [...history, { role: "user", content: messageText }]);
   await sendDM(senderId, reply);
