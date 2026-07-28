@@ -86,10 +86,17 @@ app.post("/webhook", async (req, res) => {
             continue;
           }
 
-          // Use ig_post_media_id from payload directly if available (more reliable)
+          // Use ig_post_media_id from payload directly if available
           const mediaId = sharedPost.payload?.ig_post_media_id
             || attachUrl.match(/asset_id=(\d+)/)?.[1];
           if (mediaId) {
+            // Try direct media_id lookup first (handles carousels too)
+            const productByMediaId = await getProductByMediaId(client.id, mediaId);
+            if (productByMediaId) {
+              await handleProductFound(senderId, client, productByMediaId);
+              continue;
+            }
+            // Fall back to shortcode resolution
             const shortcode = await getShortcodeFromMediaId(mediaId);
             if (shortcode) {
               await handlePostLinkQuery(senderId, client, shortcode, attachUrl);
@@ -170,23 +177,11 @@ function extractPostId(text) {
 // ── Resolve Instagram media ID to post shortcode ──────────────────────────────
 async function getShortcodeFromMediaId(mediaId) {
   try {
-    // Get shortcode + album_id (album_id is set if this is a carousel child image)
     const res = await axios.get(
       `https://graph.instagram.com/v21.0/${mediaId}`,
-      { params: { fields: "shortcode,album_id", access_token: IG_ACCESS_TOKEN } }
+      { params: { fields: "shortcode", access_token: IG_ACCESS_TOKEN } }
     );
-    console.log("Resolved shortcode:", res.data.shortcode, "album_id:", res.data.album_id);
-
-    // If carousel child, get parent post shortcode instead
-    if (res.data.album_id) {
-      const parentRes = await axios.get(
-        `https://graph.instagram.com/v21.0/${res.data.album_id}`,
-        { params: { fields: "shortcode", access_token: IG_ACCESS_TOKEN } }
-      );
-      console.log("Parent shortcode:", parentRes.data.shortcode);
-      return parentRes.data.shortcode || res.data.shortcode || null;
-    }
-
+    console.log("Resolved shortcode:", res.data.shortcode);
     return res.data.shortcode || null;
   } catch (err) {
     console.error("Shortcode lookup error:", err.response?.data || err.message);
@@ -278,6 +273,55 @@ async function getProductByPostId(clientId, postId) {
   return data;
 }
 
+// ── In-memory cache for carousel children ────────────────────────────────────
+const carouselChildCache = new Map();
+
+async function fetchCarouselChildren(mediaId) {
+  try {
+    const res = await axios.get(
+      `https://graph.instagram.com/v21.0/${mediaId}/children`,
+      { params: { fields: "id", access_token: IG_ACCESS_TOKEN } }
+    );
+    const ids = new Set((res.data.data || []).map(c => c.id));
+    console.log(`Carousel children of ${mediaId}:`, [...ids]);
+    return ids;
+  } catch (e) {
+    return new Set();
+  }
+}
+
+// ── Find product by Instagram media ID (handles carousel children too) ────────
+async function getProductByMediaId(clientId, mediaId) {
+  // Direct match first
+  const { data } = await supabase
+    .from("products")
+    .select("*")
+    .eq("client_id", clientId)
+    .eq("media_id", mediaId)
+    .single();
+  if (data) return data;
+
+  // Check if mediaId is a child of any product's carousel
+  const { data: products } = await supabase
+    .from("products")
+    .select("*")
+    .eq("client_id", clientId)
+    .not("media_id", "is", null);
+
+  for (const product of products || []) {
+    let children = carouselChildCache.get(product.media_id);
+    if (!children) {
+      children = await fetchCarouselChildren(product.media_id);
+      carouselChildCache.set(product.media_id, children);
+    }
+    if (children.has(mediaId)) {
+      console.log(`Found product via carousel child: ${mediaId} → ${product.post_id}`);
+      return product;
+    }
+  }
+  return null;
+}
+
 // ── Save message to conversation history ──────────────────────────────────────
 async function saveMessage(clientId, customerIgId, role, content) {
   const { error } = await supabase.from("messages").insert({
@@ -305,15 +349,20 @@ async function getConversationHistory(clientId, customerIgId) {
   return (data || []).reverse().filter(m => m.content && m.content.trim()); // oldest first, no empty messages
 }
 
+// ── Handle a found product (shared logic) ────────────────────────────────────
+async function handleProductFound(senderId, client, product) {
+  const reply = formatProductReply(product, client.language);
+  await sendDM(senderId, reply);
+  await saveMessage(client.id, senderId, "assistant", `[${product.product_name} - ${product.price} ${product.currency}] ${reply}`);
+  await addToCart(client.id, senderId, product);
+  await saveOrder(client.id, senderId, product.id, "interested");
+}
+
 // ── Handle post link query ────────────────────────────────────────────────────
 async function handlePostLinkQuery(senderId, client, postId, fallbackImageUrl = null) {
   const product = await getProductByPostId(client.id, postId);
   if (product) {
-    const reply = formatProductReply(product, client.language);
-    await sendDM(senderId, reply);
-    await saveMessage(client.id, senderId, "assistant", `[${product.product_name} - ${product.price} ${product.currency}] ${reply}`);
-    await addToCart(client.id, senderId, product);
-    await saveOrder(client.id, senderId, product.id, "interested");
+    await handleProductFound(senderId, client, product);
   } else if (fallbackImageUrl) {
     // Post ID not found — try image recognition with the actual image
     console.log("Post ID not found, falling back to image recognition:", postId);
