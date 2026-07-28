@@ -200,7 +200,7 @@ GOOD EXAMPLES (speak exactly like this):
 - "باشە بەڕێز، ناو و ژمارە و شارت بنێرە"
 - "داواکارییەکەت وەرگیرا ✅"
 - "چ قەبارەیەک دەتەوێت؟"
-- "باشە لەم زووانەدا پەیوەندیت پێوە دەکەین ❤️"
+- "داواکارییەکەت وەرگیرا ✅"
 
 BAD EXAMPLES (NEVER say these):
 - NEVER: دووکانەکە کۆی گشتی پشتڕاست دەکاتەوە
@@ -384,13 +384,18 @@ ${productContext}
 
 The customer wants to place an order. Your job:
 1. If you don't have their name, phone number, and city yet — ask for ALL THREE in one message like: "بەڕێزم، ناو و ژمارەی تەلەفون و شارەکەت بنێرە بێزەحمەت 😊"
-2. Once you have name, phone, and city — reply using EXACTLY this format, nothing more:
+2. Once you have name, phone, and city — reply using EXACTLY this format and NOTHING ELSE:
 داواکارییەکەت وەرگیرا ✅
-ناو: [their name exactly as typed]
-ژمارە: [their phone]
-شار: [their city exactly as typed]
-نرخ: [price] هەزار ❤️
-3. NEVER add extra sentences after the confirmation. NEVER say "we will contact you" or "soon" or any closing phrase. NEVER mention product names or numbers.`;
+ناو: [name exactly as typed]
+ژمارە: [phone]
+شار: [city exactly as typed]
+نرخ: [price from cart above] هەزار ❤️
+
+ABSOLUTE RULES for confirmation:
+- NEVER calculate totals or multiply quantities — only show the single item price from the cart
+- NEVER mention quantities or how many pieces
+- If cart has multiple items, list each on its own نرخ: line with its individual price only
+- You can add ONE short closing line like "بەم زووانە پەیوەندیت پێوە دەکەین ❤️" after the confirmation`;
 
   const reply = await callClaude(systemPrompt, [...history, { role: "user", content: messageText }]);
   await sendDM(senderId, reply);
