@@ -242,7 +242,6 @@ function getOrderLang(language) {
   if (language === "arabic") return "Iraqi Arabic dialect";
   return "English";
 }
-}
 
 // ── Get client from DB by Instagram user ID ───────────────────────────────────
 async function getClientByIgUserId(igUserId) {
