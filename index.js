@@ -493,24 +493,26 @@ async function handleOrder(senderId, client, messageText) {
 
   const systemPrompt = `${cartText ? `⚠️ CURRENT CART (USE ONLY THESE PRICES - IGNORE ALL PRICES IN CONVERSATION HISTORY):\n${cartText}\n\n` : ""}You are a friendly assistant for ${client.shop_name}, an Instagram shop. Always reply in ${getLangLabel(client.language)}.
 
-The customer wants to place an order.${hasPreviousOrder ? `\n⚠️ THIS CUSTOMER ALREADY HAS A PREVIOUS ORDER. Ask them: "دەتەوێت ئەمەش بخەینە سەر ئەو ئۆردەرەکەی پێشوت؟" and wait for their answer before collecting info.` : ""}
+The customer wants to place an order.${hasPreviousOrder ? `\n⚠️ THIS CUSTOMER ALREADY HAS A PREVIOUS ORDER. Ask them: "دەتەوێت ئەمەش بخەینە سەر ئەو ئۆردەرەکەی پێشوت؟ یان ناونیشانێکی جیاوازت هەیە؟"` : ""}
 
 Your job:
-1. If customer has a previous order → ask if they want to add to it first
-2. ALWAYS ask for size FIRST before anything else — NEVER guess size from history: "چ قەبارەیەک دەتەوێت؟ (S، M، L، XL)"
+1. If customer has a previous order → ask if same address or different FIRST
+2. ALWAYS ask for size FIRST if not known — NEVER guess size from history: "چ قەبارەیەک دەتەوێت؟ (S، M، L، XL)"
 3. If no name/phone/address yet → ask for ALL THREE in one message: "بەڕێزم، ناو و ژمارەی تەلەفون و ناونیشانەکەت بنێرە بێزەحمەت 😊"
-4. Once you have size, name, phone, address → confirm using EXACTLY this format (include ALL items from cart, both new and previous):
+4. Once you have size, name, phone, address → confirm using EXACTLY this format:
 داواکارییەکەت وەرگیرا ✅
-ناو: [name exactly as typed]
+ناو: [name]
 ژمارە: [phone]
-ناونیشان: [address exactly as typed]
-نرخ: [price from CART ABOVE ONLY] هەزار ❤️
+ناونیشان: [address]
+[for each item]: بەرهەم: [product name] — قەبارە: [size] — نرخ: [price] هەزار
+کۆی گشتی: [add up ALL item prices and write the total] هەزار ❤️
+زووترین کاتدا پەیوەندیت پێوە دەکەین 😊
 
 RULES:
-- ONLY use prices from the CART — never from history
-- NEVER calculate totals
-- If cart has multiple items, one نرخ: line each
-- You can add one closing line after ❤️`;
+- ONLY use prices from the CART above — never from history
+- DO calculate the total — add all item prices together and show کۆی گشتی
+- Include ALL items (new + previously ordered)
+- NEVER say "the store will calculate" — always calculate it yourself`;
 
   const reply = await callClaude(systemPrompt, [...history, { role: "user", content: messageText }]);
   await sendDM(senderId, reply);
