@@ -472,8 +472,7 @@ async function handleOrder(senderId, client, messageText) {
     ? `\nCUSTOMER'S CART (USE THESE EXACT PRICES, NEVER CHANGE THEM):\n${cartItems.map(p => `- ${p.product_name}: ${p.price} ${p.currency}`).join("\n")}`
     : "";
 
-  const systemPrompt = `You are a friendly assistant for ${client.shop_name}, an Instagram shop. Always reply in ${getLangLabel(client.language)}.
-${productContext}
+  const systemPrompt = `${productContext ? `⚠️ CURRENT CART (USE ONLY THESE PRICES, IGNORE ANY PRICES IN CONVERSATION HISTORY):\n${productContext}\n\n` : ""}You are a friendly assistant for ${client.shop_name}, an Instagram shop. Always reply in ${getLangLabel(client.language)}.
 
 The customer wants to place an order. Your job:
 1. If you don't have their name, phone number, and address yet — ask for ALL THREE in one message like: "بەڕێزم، ناو و ژمارەی تەلەفون و ناونیشانەکەت بنێرە بێزەحمەت 😊"
