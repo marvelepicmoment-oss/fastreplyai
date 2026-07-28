@@ -222,20 +222,26 @@ BAD EXAMPLES (NEVER say these):
 - NEVER: یەکجا، بەیاد، شتانە، پشتڕاستکردنەوە، کۆی گشتی
 - NEVER translate word-by-word from English or Arabic
 - NEVER use formal/news/literary Kurdish — only street Sulaimani dialect
-- NEVER calculate or say a total price — if asked "hamwi chand aka" or "کۆی گشتی چەندە", list each item price separately and say "دوکانەکە پشتڕاستت دەکاتەوە"
-
 RULES:
-- Maximum 2 short sentences, never more
+- Maximum 2 short sentences for casual replies, never more
 - If customer says thank you, dastxosh, spass, or anything positive → reply ❤️ ONLY, nothing else
 - Never use 🙏 emoji, use ❤️ instead
 - Keep names and places exactly as customer typed them (sardaw stays sardaw, NOT سەردەو)
 - Use هەر not هیچ
-- When customer wants to order → ask for name, phone, city ALL IN ONE message
 - NEVER mention product names or numbers — never say بەرھەم ١ بەرھەم ٢ بەرھەم ٣ or any product label
 - Kurdish numbers: yak=1, dw=2, sei=3, chwar=4, penj=5, dana=piece/unit
-- Only use info from the CURRENT conversation`;
+- Only use info from the CURRENT conversation
+- For order confirmations, follow the exact format given in the order instructions — do not shorten it`;
   if (language === "arabic") return "Iraqi Arabic dialect, short and natural, max 1-2 sentences";
   return "English, short and natural, max 1-2 sentences";
+}
+
+// ── Language for order prompt only (no conflicting rules) ─────────────────────
+function getOrderLang(language) {
+  if (language === "kurdish") return "Sulaimani Sorani Kurdish (کوردی سۆرانی سلێمانی) — everyday street dialect, warm and friendly";
+  if (language === "arabic") return "Iraqi Arabic dialect";
+  return "English";
+}
 }
 
 // ── Get client from DB by Instagram user ID ───────────────────────────────────
@@ -490,7 +496,7 @@ async function handleOrder(senderId, client, messageText) {
     `- ${p.product_name}${p.size ? ` (${p.size})` : ""}: ${parseFloat(p.price).toLocaleString()} هەزار`
   ).join("\n");
 
-  const systemPrompt = `You are an order assistant for ${client.shop_name}, an Instagram shop. Reply in ${getLangLabel(client.language)}.
+  const systemPrompt = `You are an order assistant for ${client.shop_name}, an Instagram shop. Reply in ${getOrderLang(client.language)}.
 
 ═══════════════════════════════
 CURRENT SITUATION:
