@@ -385,20 +385,9 @@ async function handleOrder(senderId, client, messageText) {
 
   // Read cart directly from DB — no guessing from history
   const cartItems = await getCart(client.id, senderId);
-
-  // If cart is empty, customer hasn't shared a product yet — don't collect info
-  if (cartItems.length === 0) {
-    const reply = client.language === "kurdish"
-      ? "سڵاو! تکایە لینکی بەرھەمەکە بنێرە تا نرخەکەت بۆ بڵێم 😊"
-      : client.language === "arabic"
-      ? "أهلاً! من فضلك أرسل رابط المنتج حتى أخبرك بالسعر 😊"
-      : "Hi! Please send the product link so I can give you the price 😊";
-    await sendDM(senderId, reply);
-    await saveMessage(client.id, senderId, "assistant", reply);
-    return;
-  }
-
-  const productContext = `\nCUSTOMER'S CART (USE THESE EXACT PRICES, NEVER CHANGE THEM):\n${cartItems.map(p => `- ${p.product_name}: ${p.price} ${p.currency}`).join("\n")}`;
+  const productContext = cartItems.length > 0
+    ? `\nCUSTOMER'S CART (USE THESE EXACT PRICES, NEVER CHANGE THEM):\n${cartItems.map(p => `- ${p.product_name}: ${p.price} ${p.currency}`).join("\n")}`
+    : "";
 
   const systemPrompt = `You are a friendly assistant for ${client.shop_name}, an Instagram shop. Always reply in ${getLangLabel(client.language)}.
 ${productContext}
