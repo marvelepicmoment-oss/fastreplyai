@@ -77,12 +77,12 @@ app.post("/webhook", async (req, res) => {
         const sharedPost = attachments.find(a => a.type === "ig_post" || a.type === "ig_reel" || a.type === "share");
         if (sharedPost) {
           const attachUrl = sharedPost.payload?.url || "";
-          console.log("Shared post attachment:", sharedPost.type, attachUrl);
+          console.log("Shared post FULL PAYLOAD:", JSON.stringify(sharedPost.payload));
 
           // Try direct URL match first
           const directPostId = extractPostId(attachUrl);
           if (directPostId) {
-            await handlePostLinkQuery(senderId, client, directPostId);
+            await handlePostLinkQuery(senderId, client, directPostId, attachUrl);
             continue;
           }
 
@@ -92,9 +92,16 @@ app.post("/webhook", async (req, res) => {
             const mediaId = assetMatch[1];
             const shortcode = await getShortcodeFromMediaId(mediaId);
             if (shortcode) {
-              await handlePostLinkQuery(senderId, client, shortcode);
+              await handlePostLinkQuery(senderId, client, shortcode, attachUrl);
               continue;
             }
+          }
+
+          // Fallback: use image recognition directly on the CDN image
+          if (attachUrl) {
+            console.log("Falling back to image recognition for shared post");
+            await handleImageQuery(senderId, client, attachUrl, messageText);
+            continue;
           }
         }
 
@@ -163,35 +170,12 @@ function extractPostId(text) {
 // ── Resolve Instagram media ID to post shortcode ──────────────────────────────
 async function getShortcodeFromMediaId(mediaId) {
   try {
-    // Step 1: get shortcode only
     const res = await axios.get(
       `https://graph.instagram.com/v21.0/${mediaId}`,
       { params: { fields: "shortcode", access_token: IG_ACCESS_TOKEN } }
     );
-    const shortcode = res.data.shortcode;
-    console.log("Resolved shortcode:", shortcode);
-    if (!shortcode) return null;
-
-    // Step 2: if product not found later, try carousel parent (separate call)
-    // Store shortcode but also check if this is a carousel child
-    try {
-      const parentRes = await axios.get(
-        `https://graph.instagram.com/v21.0/${mediaId}`,
-        { params: { fields: "carousel_parent_id", access_token: IG_ACCESS_TOKEN } }
-      );
-      if (parentRes.data.carousel_parent_id) {
-        console.log("Carousel child, looking up parent:", parentRes.data.carousel_parent_id);
-        const parentShortcodeRes = await axios.get(
-          `https://graph.instagram.com/v21.0/${parentRes.data.carousel_parent_id}`,
-          { params: { fields: "shortcode", access_token: IG_ACCESS_TOKEN } }
-        );
-        console.log("Parent shortcode:", parentShortcodeRes.data.shortcode);
-        return parentShortcodeRes.data.shortcode || shortcode;
-      }
-    } catch (e) {
-      // Not a carousel child — use original shortcode
-    }
-    return shortcode;
+    console.log("Resolved shortcode:", res.data.shortcode);
+    return res.data.shortcode || null;
   } catch (err) {
     console.error("Shortcode lookup error:", err.response?.data || err.message);
     return null;
@@ -310,7 +294,7 @@ async function getConversationHistory(clientId, customerIgId) {
 }
 
 // ── Handle post link query ────────────────────────────────────────────────────
-async function handlePostLinkQuery(senderId, client, postId) {
+async function handlePostLinkQuery(senderId, client, postId, fallbackImageUrl = null) {
   const product = await getProductByPostId(client.id, postId);
   if (product) {
     const reply = formatProductReply(product, client.language);
@@ -318,6 +302,10 @@ async function handlePostLinkQuery(senderId, client, postId) {
     await saveMessage(client.id, senderId, "assistant", `[${product.product_name} - ${product.price} ${product.currency}] ${reply}`);
     await addToCart(client.id, senderId, product);
     await saveOrder(client.id, senderId, product.id, "interested");
+  } else if (fallbackImageUrl) {
+    // Post ID not found — try image recognition with the actual image
+    console.log("Post ID not found, falling back to image recognition:", postId);
+    await handleImageQuery(senderId, client, fallbackImageUrl, "");
   } else {
     const reply = client.language === "arabic"
       ? "شكراً! سأتحقق من السعر وأعود إليك قريباً ⏳"
