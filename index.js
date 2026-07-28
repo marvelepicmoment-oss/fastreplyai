@@ -183,7 +183,10 @@ function isOrderIntent(text) {
     "i want to buy", "i want to order", "i'll take it", "i want this",
     "دەمەوێت بیکڕم", "دەمەوێت بیکڕێت", "کڕینەکەم", "دەیکڕم",
     "danam bo dani", "danam", "bom bda", "bom bna", "order", "dakam",
-    "dabi", "wam bda", "wam bdn", "bo dani", "bkrem"
+    "dabi", "wam bda", "wam bdn", "bo dani", "bkrem",
+    "yak dana", "dw dana", "sei dana", "chwar dana", "penj dana",
+    "1 dana", "2 dana", "3 dana", "4 dana", "5 dana",
+    "lawam bo daney", "lawam bda", "lawam bo"
   ];
   return orderKeywords.some(k => text.toLowerCase().includes(k.toLowerCase()));
 }
@@ -205,7 +208,8 @@ function getLangLabel(language) {
 - Always remember the full conversation context including previous products discussed
 - If the customer orders multiple products, list each one separately with its own price — never add them up
 - NEVER use the word "Product", "بەرھەم ١", "بەرھەم ٢", "بەرھەم ٣" or any numbered product reference — always use the actual product name from the conversation
-- Track which specific product was discussed based on the post link shared, using the price mentioned in that reply`;
+- Track which specific product was discussed based on the post link shared, using the price mentioned in that reply
+- Kurdish number words: yak=1, dw=2, sei=3, chwar=4, penj=5, dana=piece/unit. So "dw dana" means 2 pieces, "yak dana" means 1 piece — always understand these correctly`;
   if (language === "arabic") return "Iraqi Arabic dialect, short and natural, max 1-2 sentences";
   return "English, short and natural, max 1-2 sentences";
 }
@@ -322,14 +326,30 @@ async function handleImageQuery(senderId, client, imageUrl, messageText) {
 
 // ── Handle order intent ───────────────────────────────────────────────────────
 async function handleOrder(senderId, client, messageText) {
-  const reply = client.language === "arabic"
-    ? "تم تسجيل طلبك! ✅ سنتواصل معك قريباً 🛍️"
-    : client.language === "kurdish"
-    ? "داواکارییەکەت تۆمارکرا! ✅ بەم زووانە پەیوەندیت پێوە دەکەین ❤️"
-    : "Order registered! ✅ We'll contact you soon 🛍️";
+  const history = await getConversationHistory(client.id, senderId);
+
+  // Check if we already have name, phone, and city in the conversation
+  const historyText = history.map(m => m.content).join(" ");
+  const hasName = /[A-Za-zئابپتجچحخدرزسشعغفقکگلمنوهی]{2,}/.test(historyText);
+  const hasPhone = /07\d{8,}|075\d+|077\d+|078\d+/.test(historyText);
+
+  const systemPrompt = `You are a friendly assistant for ${client.shop_name}, an Instagram shop. Always reply in ${getLangLabel(client.language)}.
+
+The customer wants to place an order. Your job:
+1. If you don't have their name, phone number, and city yet — ask for ALL THREE in one message like: "بەڕێزم، ناو و ژمارەی تەلەفون و شارەکەت بنێرە بێزەحمەت 😊"
+2. Once you have name, phone, and city — confirm the order by summarizing: name, phone, city, what they ordered and size, price per item. Never calculate total. End with ❤️
+3. Never say "order registered" or "we will contact you" — just confirm the details naturally`;
+
+  const reply = await callClaude(systemPrompt, [...history, { role: "user", content: messageText }]);
   await sendDM(senderId, reply);
   await saveMessage(client.id, senderId, "assistant", reply);
-  await saveOrder(client.id, senderId, null, "ordered");
+
+  // Only save as ordered if reply looks like a confirmation (has phone number pattern)
+  if (hasPhone && hasName) {
+    await saveOrder(client.id, senderId, null, "ordered");
+  } else {
+    await saveOrder(client.id, senderId, null, "collecting_info");
+  }
 }
 
 // ── Handle general query ──────────────────────────────────────────────────────
