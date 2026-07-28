@@ -463,42 +463,50 @@ async function clearCart(clientId, customerIgId) {
 // ── Handle order intent ───────────────────────────────────────────────────────
 async function handleOrder(senderId, client, messageText) {
   const history = await getConversationHistory(client.id, senderId);
-  const historyText = history.map(m => m.content).join(" ");
-  const hasPhone = /07\d{8,}|075\d+|077\d+|078\d+/.test(historyText);
 
   // Read cart directly from DB — no guessing from history
   const cartItems = await getCart(client.id, senderId);
-  const productContext = cartItems.length > 0
-    ? `\nCUSTOMER'S CART (USE THESE EXACT PRICES, NEVER CHANGE THEM):\n${cartItems.map(p => `- ${p.product_name}: ${p.price} ${p.currency}`).join("\n")}`
+  const cartText = cartItems.length > 0
+    ? cartItems.map(p => `- ${p.product_name}: ${p.price} ${p.currency}`).join("\n")
     : "";
 
-  const systemPrompt = `${productContext ? `⚠️ CURRENT CART (USE ONLY THESE PRICES, IGNORE ANY PRICES IN CONVERSATION HISTORY):\n${productContext}\n\n` : ""}You are a friendly assistant for ${client.shop_name}, an Instagram shop. Always reply in ${getLangLabel(client.language)}.
+  // Check if there's already a completed order
+  const { data: existingOrder } = await supabase
+    .from("orders")
+    .select("status")
+    .eq("client_id", client.id)
+    .eq("customer_ig_id", senderId)
+    .single();
+  const hasPreviousOrder = existingOrder && existingOrder.status === "ordered";
 
-The customer wants to place an order. Your job:
-1. If you don't have their name, phone number, and address yet — ask for ALL THREE in one message like: "بەڕێزم، ناو و ژمارەی تەلەفون و ناونیشانەکەت بنێرە بێزەحمەت 😊"
-2. Once you have name, phone, and address — reply using EXACTLY this format and NOTHING ELSE:
+  const systemPrompt = `${cartText ? `⚠️ CURRENT CART (USE ONLY THESE PRICES - IGNORE ALL PRICES IN CONVERSATION HISTORY):\n${cartText}\n\n` : ""}You are a friendly assistant for ${client.shop_name}, an Instagram shop. Always reply in ${getLangLabel(client.language)}.
+
+The customer wants to place an order.${hasPreviousOrder ? `\n⚠️ THIS CUSTOMER ALREADY HAS A PREVIOUS ORDER. Ask them: "دەتەوێت ئەمەش بخەینە سەر ئەو ئۆردەرەکەی پێشوت؟" and wait for their answer before collecting info.` : ""}
+
+Your job:
+1. If customer has a previous order → ask if they want to add to it first
+2. If no name/phone/address yet → ask for ALL THREE in one message: "بەڕێزم، ناو و ژمارەی تەلەفون و ناونیشانەکەت بنێرە بێزەحمەت 😊"
+3. Once you have name, phone, address → confirm using EXACTLY this format:
 داواکارییەکەت وەرگیرا ✅
 ناو: [name exactly as typed]
 ژمارە: [phone]
 ناونیشان: [address exactly as typed]
-نرخ: [price from cart above] هەزار ❤️
+نرخ: [price from CART ABOVE ONLY] هەزار ❤️
 
-ABSOLUTE RULES for confirmation:
-- ONLY use prices from the CART ABOVE — never use prices from conversation history
-- If you see "[ORDER COMPLETED]" in the history, ignore ALL prices and quantities mentioned before that line
-- NEVER mention previous orders, previous totals, or previous quantities
-- NEVER calculate totals or multiply quantities — only show the single item price from the cart
-- If cart has multiple items, list each on its own نرخ: line with its individual price only
-- You can add ONE short closing line like "بەم زووانە پەیوەندیت پێوە دەکەین ❤️" after the confirmation`;
+RULES:
+- ONLY use prices from the CART — never from history
+- NEVER calculate totals
+- If cart has multiple items, one نرخ: line each
+- You can add one closing line after ❤️`;
 
   const reply = await callClaude(systemPrompt, [...history, { role: "user", content: messageText }]);
   await sendDM(senderId, reply);
   await saveMessage(client.id, senderId, "assistant", reply);
 
-  if (hasPhone) {
+  // Mark as ordered only if reply contains the confirmation format
+  if (reply.includes("داواکارییەکەت وەرگیرا")) {
     await saveOrder(client.id, senderId, null, "ordered");
     await clearCart(client.id, senderId);
-    // Save a marker so Claude ignores old order details in future messages
     await saveMessage(client.id, senderId, "assistant", "[ORDER COMPLETED - ignore all prices and quantities mentioned before this line]");
   } else {
     await saveOrder(client.id, senderId, null, "collecting_info");
