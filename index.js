@@ -193,23 +193,32 @@ function isOrderIntent(text) {
 
 // ── Language label for prompts ────────────────────────────────────────────────
 function getLangLabel(language) {
-  if (language === "kurdish") return `Sorani Kurdish (کوردی سۆرانی) as spoken in Kurdistan Region of Iraq. Rules:
-- Use natural short everyday expressions, never formal or translated text
-- Maximum 1-2 sentences, never more
-- If the customer says thank you or anything positive, just reply with ❤️ only — no extra words, never use 🙏
-- Never transliterate names or places — keep them exactly as the customer typed them (Latin or Kurdish)
-- Use هەر not هیچ when meaning "anything"
-- Use simple everyday Sulaimani Kurdish words only — never use formal, literary, or unclear words
-- Forbidden words: یەکجا، بەیاد، شتانە، ئەوانە — use simple alternatives instead
-- Never repeat info the customer already knows
-- Never add extra sentences like "if you need anything let us know" or "we will contact you soon"
-- When collecting order info, ask for name, phone, and city ALL IN ONE message like this: "بەڕێزم، ناو و ژمارەی تەلەفون و شارەکەت بنێرە بێزەحمەت 😊" — never ask them separately one by one
-- When confirming an order, summarize name, phone, city, size and products ordered — but NEVER calculate a total price yourself, just list each item and its price separately and say the shop will confirm the total
-- Always remember the full conversation context including previous products discussed
-- If the customer orders multiple products, list each one separately with its own price — never add them up
-- NEVER use the word "Product", "بەرھەم ١", "بەرھەم ٢", "بەرھەم ٣" or any numbered product reference — always use the actual product name from the conversation
-- Track which specific product was discussed based on the post link shared, using the price mentioned in that reply
-- Kurdish number words: yak=1, dw=2, sei=3, chwar=4, penj=5, dana=piece/unit. So "dw dana" means 2 pieces, "yak dana" means 1 piece — always understand these correctly`;
+  if (language === "kurdish") return `You are a shop assistant who speaks Sulaimani Sorani Kurdish (کوردی سۆرانی سلێمانی) as spoken by everyday people in Sulaymaniyah city.
+
+GOOD EXAMPLES (speak exactly like this):
+- "سڵاو! نرخی ٣٥ هەزارەیە 😊"
+- "باشە بەڕێز، ناو و ژمارە و شارت بنێرە"
+- "داواکارییەکەت وەرگیرا ✅"
+- "چ قەبارەیەک دەتەوێت؟"
+- "باشە لەم زووانەدا پەیوەندیت پێوە دەکەین ❤️"
+
+BAD EXAMPLES (NEVER say these):
+- NEVER: دووکانەکە کۆی گشتی پشتڕاست دەکاتەوە
+- NEVER: تۆڵکراوەتەوە
+- NEVER: یەکجا، بەیاد، شتانە، پشتڕاستکردنەوە، کۆی گشتی
+- NEVER translate word-by-word from English or Arabic
+- NEVER use formal/news/literary Kurdish — only street Sulaimani dialect
+
+RULES:
+- Maximum 2 short sentences, never more
+- If customer says thank you, dastxosh, spass, or anything positive → reply ❤️ ONLY, nothing else
+- Never use 🙏 emoji, use ❤️ instead
+- Keep names and places exactly as customer typed them (sardaw stays sardaw, NOT سەردەو)
+- Use هەر not هیچ
+- When customer wants to order → ask for name, phone, city ALL IN ONE message
+- NEVER mention product names or numbers — never say بەرھەم ١ بەرھەم ٢ بەرھەم ٣ or any product label
+- Kurdish numbers: yak=1, dw=2, sei=3, chwar=4, penj=5, dana=piece/unit
+- Only use info from the CURRENT conversation`;
   if (language === "arabic") return "Iraqi Arabic dialect, short and natural, max 1-2 sentences";
   return "English, short and natural, max 1-2 sentences";
 }
@@ -261,8 +270,9 @@ async function saveMessage(clientId, customerIgId, role, content) {
   if (error) console.error("Save message error:", error.message);
 }
 
-// ── Get conversation history (last 8 messages) ────────────────────────────────
+// ── Get conversation history (last 20 messages, within 6 hours) ───────────────
 async function getConversationHistory(clientId, customerIgId) {
+  const sixHoursAgo = new Date(Date.now() - 6 * 60 * 60 * 1000).toISOString();
   const { data } = await supabase
     .from("messages")
     .select("role, content")
@@ -270,6 +280,7 @@ async function getConversationHistory(clientId, customerIgId) {
     .eq("customer_ig_id", customerIgId)
     .neq("content", "")
     .not("content", "is", null)
+    .gte("created_at", sixHoursAgo)
     .order("created_at", { ascending: false })
     .limit(20);
   return (data || []).reverse().filter(m => m.content && m.content.trim()); // oldest first, no empty messages
@@ -281,8 +292,8 @@ async function handlePostLinkQuery(senderId, client, postId) {
   if (product) {
     const reply = formatProductReply(product, client.language);
     await sendDM(senderId, reply);
-    // Save with product name clearly labeled so Claude remembers which product this is
     await saveMessage(client.id, senderId, "assistant", `[${product.product_name} - ${product.price} ${product.currency}] ${reply}`);
+    await addToCart(client.id, senderId, product);
     await saveOrder(client.id, senderId, product.id, "interested");
   } else {
     const reply = client.language === "arabic"
@@ -324,29 +335,70 @@ async function handleImageQuery(senderId, client, imageUrl, messageText) {
   }
 }
 
+// ── Add product to cart ───────────────────────────────────────────────────────
+async function addToCart(clientId, customerIgId, product) {
+  const { error } = await supabase.from("cart").upsert({
+    client_id: clientId,
+    customer_ig_id: customerIgId,
+    product_id: product.id,
+    product_name: product.product_name,
+    price: product.price,
+    currency: product.currency
+  }, { onConflict: "client_id,customer_ig_id,product_id" });
+  if (error) console.error("Cart error:", error.message);
+}
+
+// ── Get cart items ────────────────────────────────────────────────────────────
+async function getCart(clientId, customerIgId) {
+  const { data, error } = await supabase
+    .from("cart")
+    .select("*")
+    .eq("client_id", clientId)
+    .eq("customer_ig_id", customerIgId)
+    .order("created_at", { ascending: true });
+  if (error) console.error("Cart fetch error:", error.message);
+  return data || [];
+}
+
+// ── Clear cart after order ────────────────────────────────────────────────────
+async function clearCart(clientId, customerIgId) {
+  await supabase.from("cart").delete()
+    .eq("client_id", clientId)
+    .eq("customer_ig_id", customerIgId);
+}
+
 // ── Handle order intent ───────────────────────────────────────────────────────
 async function handleOrder(senderId, client, messageText) {
   const history = await getConversationHistory(client.id, senderId);
-
-  // Check if we already have name, phone, and city in the conversation
   const historyText = history.map(m => m.content).join(" ");
-  const hasName = /[A-Za-zئابپتجچحخدرزسشعغفقکگلمنوهی]{2,}/.test(historyText);
   const hasPhone = /07\d{8,}|075\d+|077\d+|078\d+/.test(historyText);
 
+  // Read cart directly from DB — no guessing from history
+  const cartItems = await getCart(client.id, senderId);
+  const productContext = cartItems.length > 0
+    ? `\nCUSTOMER'S CART (USE THESE EXACT PRICES, NEVER CHANGE THEM):\n${cartItems.map(p => `- ${p.product_name}: ${p.price} ${p.currency}`).join("\n")}`
+    : "";
+
   const systemPrompt = `You are a friendly assistant for ${client.shop_name}, an Instagram shop. Always reply in ${getLangLabel(client.language)}.
+${productContext}
 
 The customer wants to place an order. Your job:
 1. If you don't have their name, phone number, and city yet — ask for ALL THREE in one message like: "بەڕێزم، ناو و ژمارەی تەلەفون و شارەکەت بنێرە بێزەحمەت 😊"
-2. Once you have name, phone, and city — confirm the order by summarizing: name, phone, city, what they ordered and size, price per item. Never calculate total. End with ❤️
-3. Never say "order registered" or "we will contact you" — just confirm the details naturally`;
+2. Once you have name, phone, and city — reply using EXACTLY this format, nothing more:
+داواکارییەکەت وەرگیرا ✅
+ناو: [their name exactly as typed]
+ژمارە: [their phone]
+شار: [their city exactly as typed]
+نرخ: [price] هەزار ❤️
+3. NEVER add extra sentences after the confirmation. NEVER say "we will contact you" or "soon" or any closing phrase. NEVER mention product names or numbers.`;
 
   const reply = await callClaude(systemPrompt, [...history, { role: "user", content: messageText }]);
   await sendDM(senderId, reply);
   await saveMessage(client.id, senderId, "assistant", reply);
 
-  // Only save as ordered if reply looks like a confirmation (has phone number pattern)
-  if (hasPhone && hasName) {
+  if (hasPhone) {
     await saveOrder(client.id, senderId, null, "ordered");
+    await clearCart(client.id, senderId);
   } else {
     await saveOrder(client.id, senderId, null, "collecting_info");
   }
