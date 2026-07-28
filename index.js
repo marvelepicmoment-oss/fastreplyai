@@ -363,7 +363,7 @@ async function handleProductFound(senderId, client, product) {
 
   if (existingOrder && existingOrder.status === "ordered") {
     const addToOrderMsg = client.language === "kurdish"
-      ? `${reply}\n\nئایا دەتەوێت بیزیادبکەیت بۆ داواکارییەکەی پێشووت؟`
+      ? `${reply}\n\nدەتەوێت ئەمەش بخەینە سەر ئەو ئۆردەرەکەی پێشوت؟`
       : client.language === "arabic"
       ? `${reply}\n\nهل تريد إضافته لطلبك السابق؟`
       : `${reply}\n\nWould you like to add this to your previous order?`;
