@@ -335,7 +335,7 @@ async function saveMessage(clientId, customerIgId, role, content) {
 
 // ── Get conversation history (last 20 messages, within 6 hours) ───────────────
 async function getConversationHistory(clientId, customerIgId) {
-  const sixHoursAgo = new Date(Date.now() - 6 * 60 * 60 * 1000).toISOString();
+  const sixHoursAgo = new Date(Date.now() - 8 * 60 * 60 * 1000).toISOString();
   const { data } = await supabase
     .from("messages")
     .select("role, content")
@@ -345,13 +345,34 @@ async function getConversationHistory(clientId, customerIgId) {
     .not("content", "is", null)
     .gte("created_at", sixHoursAgo)
     .order("created_at", { ascending: false })
-    .limit(20);
+    .limit(25);
   return (data || []).reverse().filter(m => m.content && m.content.trim()); // oldest first, no empty messages
 }
 
 // ── Handle a found product (shared logic) ────────────────────────────────────
 async function handleProductFound(senderId, client, product) {
   const reply = formatProductReply(product, client.language);
+
+  // Check if customer already has a completed order — ask if they want to add to it
+  const { data: existingOrder } = await supabase
+    .from("orders")
+    .select("status")
+    .eq("client_id", client.id)
+    .eq("customer_ig_id", senderId)
+    .single();
+
+  if (existingOrder && existingOrder.status === "ordered") {
+    const addToOrderMsg = client.language === "kurdish"
+      ? `${reply}\n\nئایا دەتەوێت بیزیادبکەیت بۆ داواکارییەکەی پێشووت؟`
+      : client.language === "arabic"
+      ? `${reply}\n\nهل تريد إضافته لطلبك السابق؟`
+      : `${reply}\n\nWould you like to add this to your previous order?`;
+    await sendDM(senderId, addToOrderMsg);
+    await saveMessage(client.id, senderId, "assistant", `[${product.product_name} - ${product.price} ${product.currency}] ${addToOrderMsg}`);
+    await addToCart(client.id, senderId, product);
+    return;
+  }
+
   await sendDM(senderId, reply);
   await saveMessage(client.id, senderId, "assistant", `[${product.product_name} - ${product.price} ${product.currency}] ${reply}`);
   await addToCart(client.id, senderId, product);
@@ -464,8 +485,10 @@ The customer wants to place an order. Your job:
 نرخ: [price from cart above] هەزار ❤️
 
 ABSOLUTE RULES for confirmation:
+- ONLY use prices from the CART ABOVE — never use prices from conversation history
+- If you see "[ORDER COMPLETED]" in the history, ignore ALL prices and quantities mentioned before that line
+- NEVER mention previous orders, previous totals, or previous quantities
 - NEVER calculate totals or multiply quantities — only show the single item price from the cart
-- NEVER mention quantities or how many pieces
 - If cart has multiple items, list each on its own نرخ: line with its individual price only
 - You can add ONE short closing line like "بەم زووانە پەیوەندیت پێوە دەکەین ❤️" after the confirmation`;
 
@@ -476,6 +499,8 @@ ABSOLUTE RULES for confirmation:
   if (hasPhone) {
     await saveOrder(client.id, senderId, null, "ordered");
     await clearCart(client.id, senderId);
+    // Save a marker so Claude ignores old order details in future messages
+    await saveMessage(client.id, senderId, "assistant", "[ORDER COMPLETED - ignore all prices and quantities mentioned before this line]");
   } else {
     await saveOrder(client.id, senderId, null, "collecting_info");
   }
