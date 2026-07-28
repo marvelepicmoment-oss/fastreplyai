@@ -485,8 +485,9 @@ The customer wants to place an order.${hasPreviousOrder ? `\n⚠️ THIS CUSTOME
 
 Your job:
 1. If customer has a previous order → ask if they want to add to it first
-2. If no name/phone/address yet → ask for ALL THREE in one message: "بەڕێزم، ناو و ژمارەی تەلەفون و ناونیشانەکەت بنێرە بێزەحمەت 😊"
-3. Once you have name, phone, address → confirm using EXACTLY this format:
+2. If size not confirmed yet → ask for size first: "چ قەبارەیەک دەتەوێت؟"
+3. If no name/phone/address yet → ask for ALL THREE in one message: "بەڕێزم، ناو و ژمارەی تەلەفون و ناونیشانەکەت بنێرە بێزەحمەت 😊"
+4. Once you have size, name, phone, address → confirm using EXACTLY this format:
 داواکارییەکەت وەرگیرا ✅
 ناو: [name exactly as typed]
 ژمارە: [phone]
