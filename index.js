@@ -454,11 +454,13 @@ async function getCart(clientId, customerIgId) {
   return data || [];
 }
 
-// ── Clear cart after order ────────────────────────────────────────────────────
-async function clearCart(clientId, customerIgId) {
-  await supabase.from("cart").delete()
+// ── Mark cart items as ordered (don't delete — keep for combining future orders) ──
+async function markCartOrdered(clientId, customerIgId) {
+  await supabase.from("cart")
+    .update({ ordered: true })
     .eq("client_id", clientId)
-    .eq("customer_ig_id", customerIgId);
+    .eq("customer_ig_id", customerIgId)
+    .eq("ordered", false);
 }
 
 // ── Handle order intent ───────────────────────────────────────────────────────
@@ -467,14 +469,18 @@ async function handleOrder(senderId, client, messageText) {
 
   // Read cart directly from DB — no guessing from history
   const cartItems = await getCart(client.id, senderId);
-  // Last item in cart = the product they most recently shared (currently ordering)
-  const lastItem = cartItems.length > 0 ? cartItems[cartItems.length - 1] : null;
-  const cartText = cartItems.length > 0
-    ? cartItems.map((p, i) => {
-        const isLatest = i === cartItems.length - 1;
-        return `- ${p.product_name}: ${p.price} ${p.currency}${isLatest ? " ← THIS IS THE PRODUCT THEY ARE ORDERING RIGHT NOW" : " (previous product)"}`;
-      }).join("\n")
-    : "";
+  const newItems = cartItems.filter(p => !p.ordered);
+  const prevItems = cartItems.filter(p => p.ordered);
+
+  let cartText = "";
+  if (newItems.length > 0) {
+    cartText += `NEW ITEMS CUSTOMER IS ORDERING NOW (USE THESE PRICES ONLY):\n`;
+    cartText += newItems.map(p => `- ${p.product_name}: ${p.price} ${p.currency}${p.size ? `, size: ${p.size}` : ""}`).join("\n");
+  }
+  if (prevItems.length > 0) {
+    cartText += `\n\nPREVIOUSLY ORDERED ITEMS (already confirmed, include in combined order):\n`;
+    cartText += prevItems.map(p => `- ${p.product_name}: ${p.price} ${p.currency}${p.size ? `, size: ${p.size}` : ""}, qty: ${p.quantity || 1}`).join("\n");
+  }
 
   // Check if there's already a completed order
   const { data: existingOrder } = await supabase
@@ -491,9 +497,9 @@ The customer wants to place an order.${hasPreviousOrder ? `\n⚠️ THIS CUSTOME
 
 Your job:
 1. If customer has a previous order → ask if they want to add to it first
-2. If size not confirmed yet → ask for size first: "چ قەبارەیەک دەتەوێت؟"
+2. ALWAYS ask for size FIRST before anything else — NEVER guess size from history: "چ قەبارەیەک دەتەوێت؟ (S، M، L، XL)"
 3. If no name/phone/address yet → ask for ALL THREE in one message: "بەڕێزم، ناو و ژمارەی تەلەفون و ناونیشانەکەت بنێرە بێزەحمەت 😊"
-4. Once you have size, name, phone, address → confirm using EXACTLY this format:
+4. Once you have size, name, phone, address → confirm using EXACTLY this format (include ALL items from cart, both new and previous):
 داواکارییەکەت وەرگیرا ✅
 ناو: [name exactly as typed]
 ژمارە: [phone]
@@ -513,7 +519,7 @@ RULES:
   // Mark as ordered only if reply contains the confirmation format
   if (reply.includes("داواکارییەکەت وەرگیرا")) {
     await saveOrder(client.id, senderId, null, "ordered");
-    await clearCart(client.id, senderId);
+    await markCartOrdered(client.id, senderId);
     await saveMessage(client.id, senderId, "assistant", "[ORDER COMPLETED - ignore all prices and quantities mentioned before this line]");
   } else {
     await saveOrder(client.id, senderId, null, "collecting_info");
