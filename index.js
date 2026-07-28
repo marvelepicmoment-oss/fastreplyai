@@ -165,8 +165,18 @@ async function getShortcodeFromMediaId(mediaId) {
   try {
     const res = await axios.get(
       `https://graph.instagram.com/v21.0/${mediaId}`,
-      { params: { fields: "shortcode", access_token: IG_ACCESS_TOKEN } }
+      { params: { fields: "shortcode,carousel_parent_id", access_token: IG_ACCESS_TOKEN } }
     );
+    // If this is a carousel child, look up the parent post's shortcode instead
+    if (res.data.carousel_parent_id) {
+      console.log("Carousel child detected, looking up parent:", res.data.carousel_parent_id);
+      const parentRes = await axios.get(
+        `https://graph.instagram.com/v21.0/${res.data.carousel_parent_id}`,
+        { params: { fields: "shortcode", access_token: IG_ACCESS_TOKEN } }
+      );
+      console.log("Resolved parent shortcode:", parentRes.data.shortcode);
+      return parentRes.data.shortcode || null;
+    }
     console.log("Resolved shortcode:", res.data.shortcode);
     return res.data.shortcode || null;
   } catch (err) {
@@ -375,20 +385,31 @@ async function handleOrder(senderId, client, messageText) {
 
   // Read cart directly from DB — no guessing from history
   const cartItems = await getCart(client.id, senderId);
-  const productContext = cartItems.length > 0
-    ? `\nCUSTOMER'S CART (USE THESE EXACT PRICES, NEVER CHANGE THEM):\n${cartItems.map(p => `- ${p.product_name}: ${p.price} ${p.currency}`).join("\n")}`
-    : "";
+
+  // If cart is empty, customer hasn't shared a product yet — don't collect info
+  if (cartItems.length === 0) {
+    const reply = client.language === "kurdish"
+      ? "سڵاو! تکایە لینکی بەرھەمەکە بنێرە تا نرخەکەت بۆ بڵێم 😊"
+      : client.language === "arabic"
+      ? "أهلاً! من فضلك أرسل رابط المنتج حتى أخبرك بالسعر 😊"
+      : "Hi! Please send the product link so I can give you the price 😊";
+    await sendDM(senderId, reply);
+    await saveMessage(client.id, senderId, "assistant", reply);
+    return;
+  }
+
+  const productContext = `\nCUSTOMER'S CART (USE THESE EXACT PRICES, NEVER CHANGE THEM):\n${cartItems.map(p => `- ${p.product_name}: ${p.price} ${p.currency}`).join("\n")}`;
 
   const systemPrompt = `You are a friendly assistant for ${client.shop_name}, an Instagram shop. Always reply in ${getLangLabel(client.language)}.
 ${productContext}
 
 The customer wants to place an order. Your job:
-1. If you don't have their name, phone number, and city yet — ask for ALL THREE in one message like: "بەڕێزم، ناو و ژمارەی تەلەفون و شارەکەت بنێرە بێزەحمەت 😊"
-2. Once you have name, phone, and city — reply using EXACTLY this format and NOTHING ELSE:
+1. If you don't have their name, phone number, and address yet — ask for ALL THREE in one message like: "بەڕێزم، ناو و ژمارەی تەلەفون و ناونیشانەکەت بنێرە بێزەحمەت 😊"
+2. Once you have name, phone, and address — reply using EXACTLY this format and NOTHING ELSE:
 داواکارییەکەت وەرگیرا ✅
 ناو: [name exactly as typed]
 ژمارە: [phone]
-شار: [city exactly as typed]
+ناونیشان: [address exactly as typed]
 نرخ: [price from cart above] هەزار ❤️
 
 ABSOLUTE RULES for confirmation:
