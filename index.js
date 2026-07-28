@@ -86,10 +86,10 @@ app.post("/webhook", async (req, res) => {
             continue;
           }
 
-          // Extract asset_id from CDN URL and resolve via Instagram API
-          const assetMatch = attachUrl.match(/asset_id=(\d+)/);
-          if (assetMatch) {
-            const mediaId = assetMatch[1];
+          // Use ig_post_media_id from payload directly if available (more reliable)
+          const mediaId = sharedPost.payload?.ig_post_media_id
+            || attachUrl.match(/asset_id=(\d+)/)?.[1];
+          if (mediaId) {
             const shortcode = await getShortcodeFromMediaId(mediaId);
             if (shortcode) {
               await handlePostLinkQuery(senderId, client, shortcode, attachUrl);
@@ -170,11 +170,23 @@ function extractPostId(text) {
 // ── Resolve Instagram media ID to post shortcode ──────────────────────────────
 async function getShortcodeFromMediaId(mediaId) {
   try {
+    // Get shortcode + album_id (album_id is set if this is a carousel child image)
     const res = await axios.get(
       `https://graph.instagram.com/v21.0/${mediaId}`,
-      { params: { fields: "shortcode", access_token: IG_ACCESS_TOKEN } }
+      { params: { fields: "shortcode,album_id", access_token: IG_ACCESS_TOKEN } }
     );
-    console.log("Resolved shortcode:", res.data.shortcode);
+    console.log("Resolved shortcode:", res.data.shortcode, "album_id:", res.data.album_id);
+
+    // If carousel child, get parent post shortcode instead
+    if (res.data.album_id) {
+      const parentRes = await axios.get(
+        `https://graph.instagram.com/v21.0/${res.data.album_id}`,
+        { params: { fields: "shortcode", access_token: IG_ACCESS_TOKEN } }
+      );
+      console.log("Parent shortcode:", parentRes.data.shortcode);
+      return parentRes.data.shortcode || res.data.shortcode || null;
+    }
+
     return res.data.shortcode || null;
   } catch (err) {
     console.error("Shortcode lookup error:", err.response?.data || err.message);
