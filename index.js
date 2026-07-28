@@ -222,6 +222,7 @@ BAD EXAMPLES (NEVER say these):
 - NEVER: یەکجا، بەیاد، شتانە، پشتڕاستکردنەوە، کۆی گشتی
 - NEVER translate word-by-word from English or Arabic
 - NEVER use formal/news/literary Kurdish — only street Sulaimani dialect
+- NEVER calculate or say a total price — if asked "hamwi chand aka" or "کۆی گشتی چەندە", list each item price separately and say "دوکانەکە پشتڕاستت دەکاتەوە"
 
 RULES:
 - Maximum 2 short sentences, never more
@@ -466,8 +467,13 @@ async function handleOrder(senderId, client, messageText) {
 
   // Read cart directly from DB — no guessing from history
   const cartItems = await getCart(client.id, senderId);
+  // Last item in cart = the product they most recently shared (currently ordering)
+  const lastItem = cartItems.length > 0 ? cartItems[cartItems.length - 1] : null;
   const cartText = cartItems.length > 0
-    ? cartItems.map(p => `- ${p.product_name}: ${p.price} ${p.currency}`).join("\n")
+    ? cartItems.map((p, i) => {
+        const isLatest = i === cartItems.length - 1;
+        return `- ${p.product_name}: ${p.price} ${p.currency}${isLatest ? " ← THIS IS THE PRODUCT THEY ARE ORDERING RIGHT NOW" : " (previous product)"}`;
+      }).join("\n")
     : "";
 
   // Check if there's already a completed order
