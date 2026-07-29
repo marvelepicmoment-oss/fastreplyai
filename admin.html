@@ -79,14 +79,12 @@
     <label>رەنگەکان — ئەگەر هەیە</label>
     <input type="text" id="colors" placeholder="سوور، سەوز، مارۆنی  یان  sawz, swr, maroni" />
 
-    <label>وێنەکانی بەرھەم — بۆ ناسینەوەی AI (دەتوانیت زۆر وێنە هەڵبژێریت)</label>
-    <div class="upload-area" id="upload-area" onclick="document.getElementById('image-input').click()">
-      <input type="file" id="image-input" accept="image/*" multiple onchange="handleImages(event)" onclick="event.stopPropagation()" />
-      <div class="upload-icon">📷</div>
-      <div class="upload-text">کلیک بکە — دەتوانیت چەند وێنەیەک هەڵبژێریت</div>
-      <div id="image-previews" style="display:flex;flex-wrap:wrap;gap:6px;padding:6px"></div>
+    <label>وێنەکانی بەرھەم — بۆ ناسینەوەی AI</label>
+    <input type="file" id="image-input" accept="image/*" onchange="handleImages(event)" style="display:none" />
+    <div id="image-previews" style="display:flex;flex-wrap:wrap;gap:8px;margin-top:6px;align-items:center">
+      <div onclick="document.getElementById('image-input').click()" style="width:70px;height:70px;border:2px dashed #444;border-radius:8px;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:28px;color:#555;flex-shrink:0">+</div>
     </div>
-    <p class="hint">وێنەکان بۆ ئەوەی AI بتوانێت بەرھەمەکە بناسێتەوە کاتێک کڕیار شەریکی دەکات</p>
+    <p class="hint">کلیک بکە بەسەر + بۆ زیادکردنی وێنە — دەتوانیت زۆر وێنە زیاد بکەیت</p>
 
     <button onclick="addProduct()" id="add-btn">زیادکردن ✅</button>
     <div id="add-msg" class="msg"></div>
@@ -115,23 +113,30 @@ function extractPostId(url) {
 }
 
 function handleImages(event) {
-  const files = Array.from(event.target.files);
-  if (!files.length) return;
-  imagesData = [];
-  const previews = document.getElementById('image-previews');
-  previews.innerHTML = '';
-  document.getElementById('upload-area').classList.add('has-image');
-  files.forEach(file => {
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      imagesData.push({ base64: e.target.result.split(',')[1], mimeType: file.type });
-      const img = document.createElement('img');
-      img.src = e.target.result;
-      img.style = 'width:70px;height:70px;object-fit:cover;border-radius:6px;border:1px solid #333';
-      previews.appendChild(img);
-    };
-    reader.readAsDataURL(file);
-  });
+  const file = event.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    imagesData.push({ base64: e.target.result.split(',')[1], mimeType: file.type });
+    const previews = document.getElementById('image-previews');
+    // Insert new image before the + button
+    const plusBtn = previews.querySelector('div');
+    const wrapper = document.createElement('div');
+    wrapper.style = 'position:relative;width:70px;height:70px;flex-shrink:0';
+    const img = document.createElement('img');
+    img.src = e.target.result;
+    img.style = 'width:70px;height:70px;object-fit:cover;border-radius:8px;border:1px solid #333';
+    const removeBtn = document.createElement('div');
+    const idx = imagesData.length - 1;
+    removeBtn.innerHTML = '✕';
+    removeBtn.style = 'position:absolute;top:-6px;right:-6px;background:#3a1a1a;border:1px solid #5a2d2d;color:#cf6f6f;border-radius:50%;width:18px;height:18px;font-size:11px;display:flex;align-items:center;justify-content:center;cursor:pointer';
+    removeBtn.onclick = () => { imagesData.splice(idx, 1); wrapper.remove(); };
+    wrapper.appendChild(img);
+    wrapper.appendChild(removeBtn);
+    previews.insertBefore(wrapper, plusBtn);
+  };
+  reader.readAsDataURL(file);
+  event.target.value = ''; // reset so same file can be picked again
 }
 
 async function login() {
@@ -198,8 +203,9 @@ async function addProduct() {
     document.getElementById('sizes').value = '';
     document.getElementById('colors').value = '';
     imagesData = [];
-    document.getElementById('image-previews').innerHTML = '';
-    document.getElementById('upload-area').classList.remove('has-image');
+    const previews = document.getElementById('image-previews');
+    previews.innerHTML = '';
+    previews.innerHTML = '<div onclick="document.getElementById(\'image-input\').click()" style="width:70px;height:70px;border:2px dashed #444;border-radius:8px;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:28px;color:#555;flex-shrink:0">+</div>';
     document.getElementById('image-input').value = '';
     loadProducts();
   } else {
