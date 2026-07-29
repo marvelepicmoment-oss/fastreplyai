@@ -79,14 +79,14 @@
     <label>رەنگەکان — ئەگەر هەیە</label>
     <input type="text" id="colors" placeholder="سوور، سەوز، مارۆنی  یان  sawz, swr, maroni" />
 
-    <label>وێنەی بەرھەم — بۆ ناسینەوەی AI</label>
+    <label>وێنەکانی بەرھەم — بۆ ناسینەوەی AI (دەتوانیت زۆر وێنە هەڵبژێریت)</label>
     <div class="upload-area" id="upload-area" onclick="document.getElementById('image-input').click()">
-      <input type="file" id="image-input" accept="image/*" onchange="handleImage(event)" onclick="event.stopPropagation()" />
+      <input type="file" id="image-input" accept="image/*" multiple onchange="handleImages(event)" onclick="event.stopPropagation()" />
       <div class="upload-icon">📷</div>
-      <div class="upload-text">کلیک بکە بۆ هەڵبژاردنی وێنە</div>
-      <img id="image-preview" src="" alt="" />
+      <div class="upload-text">کلیک بکە — دەتوانیت چەند وێنەیەک هەڵبژێریت</div>
+      <div id="image-previews" style="display:flex;flex-wrap:wrap;gap:6px;padding:6px"></div>
     </div>
-    <p class="hint">وێنە بۆ ئەوەی AI بتوانێت بەرھەمەکە بناسێتەوە کاتێک کڕیار شەریکی دەکات</p>
+    <p class="hint">وێنەکان بۆ ئەوەی AI بتوانێت بەرھەمەکە بناسێتەوە کاتێک کڕیار شەریکی دەکات</p>
 
     <button onclick="addProduct()" id="add-btn">زیادکردن ✅</button>
     <div id="add-msg" class="msg"></div>
@@ -101,8 +101,7 @@
 
 <script>
 let token = null;
-let imageBase64 = null;
-let imageMimeType = null;
+let imagesData = []; // array of {base64, mimeType}
 
 function showMsg(id, text, type) {
   const el = document.getElementById(id);
@@ -115,18 +114,24 @@ function extractPostId(url) {
   return match ? match[1] : null;
 }
 
-function handleImage(event) {
-  const file = event.target.files[0];
-  if (!file) return;
-  imageMimeType = file.type;
-  const reader = new FileReader();
-  reader.onload = (e) => {
-    imageBase64 = e.target.result.split(',')[1]; // strip data:image/...;base64,
-    const preview = document.getElementById('image-preview');
-    preview.src = e.target.result;
-    document.getElementById('upload-area').classList.add('has-image');
-  };
-  reader.readAsDataURL(file);
+function handleImages(event) {
+  const files = Array.from(event.target.files);
+  if (!files.length) return;
+  imagesData = [];
+  const previews = document.getElementById('image-previews');
+  previews.innerHTML = '';
+  document.getElementById('upload-area').classList.add('has-image');
+  files.forEach(file => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      imagesData.push({ base64: e.target.result.split(',')[1], mimeType: file.type });
+      const img = document.createElement('img');
+      img.src = e.target.result;
+      img.style = 'width:70px;height:70px;object-fit:cover;border-radius:6px;border:1px solid #333';
+      previews.appendChild(img);
+    };
+    reader.readAsDataURL(file);
+  });
 }
 
 async function login() {
@@ -178,8 +183,7 @@ async function addProduct() {
       price,
       sizes,
       colors,
-      image_base64: imageBase64 || null,
-      image_mime_type: imageMimeType || null
+      images: imagesData.length > 0 ? imagesData : null
     })
   });
   const data = await res.json();
@@ -193,9 +197,8 @@ async function addProduct() {
     document.getElementById('price').value = '';
     document.getElementById('sizes').value = '';
     document.getElementById('colors').value = '';
-    imageBase64 = null;
-    imageMimeType = null;
-    document.getElementById('image-preview').src = '';
+    imagesData = [];
+    document.getElementById('image-previews').innerHTML = '';
     document.getElementById('upload-area').classList.remove('has-image');
     document.getElementById('image-input').value = '';
     loadProducts();

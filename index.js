@@ -37,8 +37,33 @@ app.get("/admin/products", requireAdmin, async (req, res) => {
   res.json({ products: data });
 });
 
+async function uploadImages(images, prefix) {
+  const urls = [];
+  for (let i = 0; i < images.length; i++) {
+    const { base64, mimeType } = images[i];
+    try {
+      const ext = mimeType.split("/")[1] || "jpg";
+      const fileName = `${prefix}-${Date.now()}-${i}.${ext}`;
+      const buffer = Buffer.from(base64, "base64");
+      const { data, error } = await supabase.storage
+        .from("product-images")
+        .upload(fileName, buffer, { contentType: mimeType, upsert: true });
+      if (!error) {
+        const { data: urlData } = supabase.storage.from("product-images").getPublicUrl(fileName);
+        urls.push(urlData.publicUrl);
+        console.log("Uploaded image:", urlData.publicUrl);
+      } else {
+        console.error("Upload error:", error.message);
+      }
+    } catch (e) {
+      console.error("Upload exception:", e.message);
+    }
+  }
+  return urls;
+}
+
 app.post("/admin/product", requireAdmin, async (req, res) => {
-  const { product_name, post_id, post_link, price, sizes, colors, image_base64, image_mime_type } = req.body;
+  const { product_name, post_id, post_link, price, sizes, colors, images } = req.body;
 
   // Try to get media_id from Instagram API
   let media_id = null;
@@ -57,32 +82,8 @@ app.post("/admin/product", requireAdmin, async (req, res) => {
   const { data: clients } = await supabase.from("clients").select("id").limit(1);
   const client_id = clients?.[0]?.id;
 
-  // Upload image to Supabase Storage if provided
-  let image_url = null;
-  if (image_base64 && image_mime_type) {
-    console.log("Uploading image, size:", image_base64.length, "type:", image_mime_type);
-    try {
-      const ext = image_mime_type.split("/")[1] || "jpg";
-      const fileName = `${post_id}-${Date.now()}.${ext}`;
-      const buffer = Buffer.from(image_base64, "base64");
-      console.log("Uploading to bucket product-images, file:", fileName);
-      const { data: uploadData, error: uploadError } = await supabase.storage
-        .from("product-images")
-        .upload(fileName, buffer, { contentType: image_mime_type, upsert: true });
-      console.log("Upload result:", JSON.stringify(uploadData), JSON.stringify(uploadError));
-      if (!uploadError) {
-        const { data: urlData } = supabase.storage.from("product-images").getPublicUrl(fileName);
-        image_url = urlData.publicUrl;
-        console.log("Image URL:", image_url);
-      } else {
-        console.error("Image upload error:", uploadError.message, uploadError);
-      }
-    } catch (e) {
-      console.error("Image upload exception:", e.message, e.stack);
-    }
-  } else {
-    console.log("No image provided, image_base64:", !!image_base64, "image_mime_type:", !!image_mime_type);
-  }
+  // Upload all images
+  const imageUrls = images && images.length > 0 ? await uploadImages(images, post_id) : [];
 
   const { error } = await supabase.from("products").insert({
     client_id,
@@ -94,7 +95,8 @@ app.post("/admin/product", requireAdmin, async (req, res) => {
     sizes: sizes || null,
     colors: colors || null,
     media_id: media_id || null,
-    image_url: image_url || null
+    image_url: imageUrls[0] || null,
+    image_urls: imageUrls.length > 0 ? imageUrls : []
   });
 
   if (error) return res.json({ success: false, error: error.message });
@@ -113,29 +115,13 @@ app.patch("/admin/product/:id", requireAdmin, async (req, res) => {
 
   if (post_id) updates.post_id = post_id;
 
-  // Upload new image if provided
-  if (image_base64 && image_mime_type) {
-    console.log("PATCH: Uploading image, size:", image_base64.length, "type:", image_mime_type);
-    try {
-      const ext = image_mime_type.split("/")[1] || "jpg";
-      const fileName = `${req.params.id}-${Date.now()}.${ext}`;
-      const buffer = Buffer.from(image_base64, "base64");
-      const { data: uploadData, error: uploadError } = await supabase.storage
-        .from("product-images")
-        .upload(fileName, buffer, { contentType: image_mime_type, upsert: true });
-      console.log("PATCH upload result:", JSON.stringify(uploadData), JSON.stringify(uploadError));
-      if (!uploadError) {
-        const { data: urlData } = supabase.storage.from("product-images").getPublicUrl(fileName);
-        updates.image_url = urlData.publicUrl;
-        console.log("PATCH image URL:", updates.image_url);
-      } else {
-        console.error("PATCH image upload error:", uploadError.message, uploadError);
-      }
-    } catch (e) {
-      console.error("PATCH image upload exception:", e.message, e.stack);
+  // Upload new images if provided
+  if (req.body.images && req.body.images.length > 0) {
+    const newUrls = await uploadImages(req.body.images, req.params.id);
+    if (newUrls.length > 0) {
+      updates.image_url = newUrls[0];
+      updates.image_urls = newUrls;
     }
-  } else {
-    console.log("PATCH: No image provided, image_base64:", !!image_base64, "image_mime_type:", !!image_mime_type);
   }
 
   const { error } = await supabase.from("products").update(updates).eq("id", req.params.id);
@@ -579,10 +565,13 @@ async function handleImageQuery(senderId, client, imageUrl, messageText) {
       type: "image",
       source: { type: "url", url: imageUrl }
     },
-    ...productsWithImages.flatMap(p => [
-      { type: "text", text: `Product image for "${p.product_name}" (${p.price} ${p.currency}):` },
-      { type: "image", source: { type: "url", url: p.image_url } }
-    ])
+    ...productsWithImages.flatMap(p => {
+      const allUrls = [p.image_url, ...((p.image_urls || []).filter(u => u !== p.image_url))].filter(Boolean);
+      return [
+        { type: "text", text: `Product images for "${p.product_name}" (${p.price} ${p.currency}):` },
+        ...allUrls.map(url => ({ type: "image", source: { type: "url", url } }))
+      ];
+    })
   ];
 
   const history = await getConversationHistory(client.id, senderId);
