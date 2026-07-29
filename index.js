@@ -200,7 +200,9 @@ function isOrderIntent(text) {
     "dabi", "wam bda", "wam bdn", "bo dani", "bkrem",
     "yak dana", "dw dana", "sei dana", "chwar dana", "penj dana",
     "1 dana", "2 dana", "3 dana", "4 dana", "5 dana",
-    "lawam bo daney", "lawam bda", "lawam bo"
+    "lawam bo daney", "lawam bda", "lawam bo",
+    "lama dawet", "lama dawat", "lama bo daney", "lama bda", "lama bo",
+    "lamash dawet", "lamashm", "lam dawet", "lam bo daney"
   ];
   return orderKeywords.some(k => text.toLowerCase().includes(k.toLowerCase()));
 }
@@ -461,11 +463,13 @@ async function getCart(clientId, customerIgId) {
 
 // ── Mark cart items as ordered (don't delete — keep for combining future orders) ──
 async function markCartOrdered(clientId, customerIgId) {
-  await supabase.from("cart")
+  const { error } = await supabase.from("cart")
     .update({ ordered: true })
     .eq("client_id", clientId)
     .eq("customer_ig_id", customerIgId)
     .eq("ordered", false);
+  if (error) console.error("markCartOrdered error:", error.message);
+  else console.log("Cart marked as ordered for:", customerIgId);
 }
 
 // ── Handle order intent ───────────────────────────────────────────────────────
@@ -476,7 +480,17 @@ async function handleOrder(senderId, client, messageText) {
   const cartItems = await getCart(client.id, senderId);
   const newItems = cartItems.filter(p => !p.ordered);
   const prevItems = cartItems.filter(p => p.ordered);
-  const hasPreviousOrder = prevItems.length > 0;
+  // Also check orders table as fallback in case markCartOrdered failed
+  const { data: existingOrderRow } = await supabase
+    .from("orders")
+    .select("status")
+    .eq("client_id", client.id)
+    .eq("customer_ig_id", senderId)
+    .eq("status", "ordered")
+    .limit(1)
+    .single();
+  const hasPreviousOrder = prevItems.length > 0 || !!existingOrderRow;
+  console.log(`hasPreviousOrder: ${hasPreviousOrder}, prevItems: ${prevItems.length}, existingOrderRow: ${!!existingOrderRow}`);
 
   // Extract known customer info from history
   const historyText = history.map(m => m.content).join("\n");
@@ -587,7 +601,9 @@ STRICT RULES:
 - NEVER guess size from conversation history — always ask.
 - NEVER recalculate prices — use the exact numbers given above.
 - NEVER say "the store will contact you" or "the store will calculate".
-- Keep replies short — 1-2 sentences max per step except the final confirmation.`;
+- Keep replies short — 1-2 sentences max per step except the final confirmation.
+- NEVER use order phrases as customer name or address. These are order intent phrases, NOT names or locations:
+  "lama dawet", "lama dawat", "lama bo daney", "danam", "lawam bo daney", "bom bda", "1 dana", "2 dana", "yak dana", "dw dana" — if customer sent one of these, it means they want to order, NOT that their name is that phrase.`;
 
   let reply = await callClaude(systemPrompt, [...history, { role: "user", content: messageText }]);
 
