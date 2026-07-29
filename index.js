@@ -38,7 +38,7 @@ app.get("/admin/products", requireAdmin, async (req, res) => {
 });
 
 app.post("/admin/product", requireAdmin, async (req, res) => {
-  const { product_name, post_id, post_link, price, sizes, colors } = req.body;
+  const { product_name, post_id, post_link, price, sizes, colors, image_base64, image_mime_type } = req.body;
 
   // Try to get media_id from Instagram API
   let media_id = null;
@@ -57,6 +57,27 @@ app.post("/admin/product", requireAdmin, async (req, res) => {
   const { data: clients } = await supabase.from("clients").select("id").limit(1);
   const client_id = clients?.[0]?.id;
 
+  // Upload image to Supabase Storage if provided
+  let image_url = null;
+  if (image_base64 && image_mime_type) {
+    try {
+      const ext = image_mime_type.split("/")[1] || "jpg";
+      const fileName = `${post_id}-${Date.now()}.${ext}`;
+      const buffer = Buffer.from(image_base64, "base64");
+      const { error: uploadError } = await supabase.storage
+        .from("product-images")
+        .upload(fileName, buffer, { contentType: image_mime_type, upsert: true });
+      if (!uploadError) {
+        const { data: urlData } = supabase.storage.from("product-images").getPublicUrl(fileName);
+        image_url = urlData.publicUrl;
+      } else {
+        console.error("Image upload error:", uploadError.message);
+      }
+    } catch (e) {
+      console.error("Image upload exception:", e.message);
+    }
+  }
+
   const { error } = await supabase.from("products").insert({
     client_id,
     product_name,
@@ -65,7 +86,8 @@ app.post("/admin/product", requireAdmin, async (req, res) => {
     currency: "IQD",
     sizes: sizes || null,
     colors: colors || null,
-    media_id: media_id || null
+    media_id: media_id || null,
+    image_url: image_url || null
   });
 
   if (error) return res.json({ success: false, error: error.message });

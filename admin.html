@@ -11,9 +11,8 @@
   h1 { font-size: 22px; margin-bottom: 8px; color: #fff; }
   .sub { color: #888; font-size: 14px; margin-bottom: 28px; }
   label { display: block; font-size: 13px; color: #aaa; margin-bottom: 6px; margin-top: 16px; }
-  input, textarea { width: 100%; background: #111; border: 1px solid #333; border-radius: 10px; padding: 12px 14px; color: #fff; font-size: 15px; outline: none; transition: border 0.2s; }
-  input:focus, textarea:focus { border-color: #6c63ff; }
-  textarea { resize: vertical; min-height: 80px; direction: ltr; }
+  input { width: 100%; background: #111; border: 1px solid #333; border-radius: 10px; padding: 12px 14px; color: #fff; font-size: 15px; outline: none; transition: border 0.2s; }
+  input:focus { border-color: #6c63ff; }
   .hint { font-size: 12px; color: #555; margin-top: 4px; }
   button { width: 100%; margin-top: 28px; padding: 14px; background: #6c63ff; border: none; border-radius: 10px; color: #fff; font-size: 16px; font-weight: bold; cursor: pointer; transition: background 0.2s; }
   button:hover { background: #5a52d5; }
@@ -23,14 +22,27 @@
   .msg.error { background: #3a1a1a; border: 1px solid #5a2d2d; color: #cf6f6f; display: block; }
   .products-list { margin-top: 32px; border-top: 1px solid #2a2a2a; padding-top: 24px; }
   .products-list h2 { font-size: 16px; color: #aaa; margin-bottom: 16px; }
-  .product-item { background: #111; border: 1px solid #2a2a2a; border-radius: 10px; padding: 14px; margin-bottom: 10px; display: flex; justify-content: space-between; align-items: center; }
-  .product-info { flex: 1; }
+  .product-item { background: #111; border: 1px solid #2a2a2a; border-radius: 10px; padding: 14px; margin-bottom: 10px; display: flex; gap: 12px; align-items: center; }
+  .product-thumb { width: 52px; height: 52px; border-radius: 8px; object-fit: cover; background: #222; flex-shrink: 0; }
+  .product-thumb-placeholder { width: 52px; height: 52px; border-radius: 8px; background: #222; flex-shrink: 0; display: flex; align-items: center; justify-content: center; font-size: 22px; }
+  .product-info { flex: 1; min-width: 0; }
   .product-name { font-size: 15px; font-weight: bold; }
   .product-meta { font-size: 12px; color: #666; margin-top: 4px; }
-  .delete-btn { background: #3a1a1a; border: 1px solid #5a2d2d; color: #cf6f6f; border-radius: 8px; padding: 6px 12px; cursor: pointer; font-size: 13px; }
+  .delete-btn { background: #3a1a1a; border: 1px solid #5a2d2d; color: #cf6f6f; border-radius: 8px; padding: 6px 12px; cursor: pointer; font-size: 13px; flex-shrink: 0; }
   .delete-btn:hover { background: #5a2d2d; }
   #login-section { }
   #main-section { display: none; }
+
+  /* Image upload area */
+  .upload-area { width: 100%; min-height: 120px; background: #111; border: 2px dashed #333; border-radius: 10px; display: flex; flex-direction: column; align-items: center; justify-content: center; cursor: pointer; transition: border 0.2s; position: relative; overflow: hidden; margin-top: 6px; }
+  .upload-area:hover { border-color: #6c63ff; }
+  .upload-area input[type=file] { position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; height: 100%; }
+  .upload-area .upload-icon { font-size: 32px; }
+  .upload-area .upload-text { font-size: 13px; color: #666; margin-top: 6px; }
+  .upload-area img { max-width: 100%; max-height: 200px; border-radius: 8px; display: none; }
+  .upload-area.has-image .upload-icon,
+  .upload-area.has-image .upload-text { display: none; }
+  .upload-area.has-image img { display: block; }
 </style>
 </head>
 <body>
@@ -51,7 +63,7 @@
     <h1>➕ زیادکردنی بەرھەم</h1>
     <p class="sub">زانیاری بەرھەمەکە بنووسە</p>
 
-    <label>ناوی بەرھەم (بەرھەم / Product Name)</label>
+    <label>ناوی بەرھەم</label>
     <input type="text" id="product_name" placeholder="مثال: هودی، تیشرت، 3aba..." />
 
     <label>لینکی پۆستی ئینستەگرام</label>
@@ -64,8 +76,17 @@
     <label>قەبارەکان (Size)</label>
     <input type="text" id="sizes" placeholder="S, M, L, XL  یان  Freesize" />
 
-    <label>رەنگەکان (Colors) — ئەگەر هەیە</label>
+    <label>رەنگەکان — ئەگەر هەیە</label>
     <input type="text" id="colors" placeholder="سوور، سەوز، مارۆنی  یان  sawz, swr, maroni" />
+
+    <label>وێنەی بەرھەم — بۆ ناسینەوەی AI</label>
+    <div class="upload-area" id="upload-area" onclick="document.getElementById('image-input').click()">
+      <input type="file" id="image-input" accept="image/*" onchange="handleImage(event)" onclick="event.stopPropagation()" />
+      <div class="upload-icon">📷</div>
+      <div class="upload-text">کلیک بکە بۆ هەڵبژاردنی وێنە</div>
+      <img id="image-preview" src="" alt="" />
+    </div>
+    <p class="hint">وێنە بۆ ئەوەی AI بتوانێت بەرھەمەکە بناسێتەوە کاتێک کڕیار شەریکی دەکات</p>
 
     <button onclick="addProduct()" id="add-btn">زیادکردن ✅</button>
     <div id="add-msg" class="msg"></div>
@@ -80,6 +101,8 @@
 
 <script>
 let token = null;
+let imageBase64 = null;
+let imageMimeType = null;
 
 function showMsg(id, text, type) {
   const el = document.getElementById(id);
@@ -90,6 +113,20 @@ function showMsg(id, text, type) {
 function extractPostId(url) {
   const match = url.match(/instagram\.com\/(?:p|reel)\/([A-Za-z0-9_-]+)/);
   return match ? match[1] : null;
+}
+
+function handleImage(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+  imageMimeType = file.type;
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    imageBase64 = e.target.result.split(',')[1]; // strip data:image/...;base64,
+    const preview = document.getElementById('image-preview');
+    preview.src = e.target.result;
+    document.getElementById('upload-area').classList.add('has-image');
+  };
+  reader.readAsDataURL(file);
 }
 
 async function login() {
@@ -129,11 +166,21 @@ async function addProduct() {
   }
 
   document.getElementById('add-btn').disabled = true;
+  showMsg('add-msg', 'چاوەڕێ بکە...', 'success');
 
   const res = await fetch('/admin/product', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'Authorization': token },
-    body: JSON.stringify({ product_name: name, post_id: postId, post_link: link, price, sizes, colors })
+    body: JSON.stringify({
+      product_name: name,
+      post_id: postId,
+      post_link: link,
+      price,
+      sizes,
+      colors,
+      image_base64: imageBase64 || null,
+      image_mime_type: imageMimeType || null
+    })
   });
   const data = await res.json();
 
@@ -146,6 +193,11 @@ async function addProduct() {
     document.getElementById('price').value = '';
     document.getElementById('sizes').value = '';
     document.getElementById('colors').value = '';
+    imageBase64 = null;
+    imageMimeType = null;
+    document.getElementById('image-preview').src = '';
+    document.getElementById('upload-area').classList.remove('has-image');
+    document.getElementById('image-input').value = '';
     loadProducts();
   } else {
     showMsg('add-msg', 'هەڵە: ' + (data.error || 'نەزانراو'), 'error');
@@ -162,6 +214,9 @@ async function loadProducts() {
   }
   container.innerHTML = data.products.map(p => `
     <div class="product-item">
+      ${p.image_url
+        ? `<img class="product-thumb" src="${p.image_url}" alt="${p.product_name}" />`
+        : `<div class="product-thumb-placeholder">📦</div>`}
       <div class="product-info">
         <div class="product-name">${p.product_name}</div>
         <div class="product-meta">${p.price} هەزار${p.sizes ? ' · ' + p.sizes : ''}${p.colors ? ' · ' + p.colors : ''}</div>
