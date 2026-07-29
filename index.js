@@ -478,6 +478,41 @@ async function handleOrder(senderId, client, messageText) {
   const prevItems = cartItems.filter(p => p.ordered);
   const hasPreviousOrder = prevItems.length > 0;
 
+  // Extract known customer info from history
+  const historyText = history.map(m => m.content).join("\n");
+  const phoneMatch = historyText.match(/ژمارە:\s*(\d+)/);
+  const nameMatch = historyText.match(/ناو:\s*(.+)/);
+  const addressMatch = historyText.match(/ناونیشان:\s*(.+)/);
+  const knownPhone = phoneMatch ? phoneMatch[1].trim() : null;
+  const knownName = nameMatch ? nameMatch[1].trim() : null;
+  const knownAddress = addressMatch ? addressMatch[1].trim() : null;
+
+  // If there's a previous order, force the combine question before anything else
+  if (hasPreviousOrder) {
+    const alreadyAskedCombine = historyText.includes("یەکبخەین") || historyText.includes("جیاوازی بنێرین");
+    const customerAnsweredCombine = alreadyAskedCombine && (
+      messageText.toLowerCase().includes("yes") ||
+      messageText.toLowerCase().includes("باشە") ||
+      messageText.toLowerCase().includes("erê") ||
+      messageText.toLowerCase().includes("yak") ||
+      messageText.includes("یەک") ||
+      messageText.toLowerCase().includes("no") ||
+      messageText.includes("جیاواز") ||
+      messageText.includes("نەخێر")
+    );
+    if (!alreadyAskedCombine) {
+      const combineQuestion = client.language === "kurdish"
+        ? "دەتەوێت ئەمەش لەگەڵ ئەو ئۆردەرەکەی پێشوت یەکبخەین؟ یان جیاوازی بنێرین؟ 😊"
+        : client.language === "arabic"
+        ? "هل تريد إضافة هذا لطلبك السابق؟ أم طلب منفصل؟"
+        : "Do you want to combine this with your previous order, or send separately?";
+      await sendDM(senderId, combineQuestion);
+      await saveMessage(client.id, senderId, "assistant", combineQuestion);
+      await saveOrder(client.id, senderId, null, "collecting_info");
+      return;
+    }
+  }
+
   // Calculate totals in code — never let Claude do math
   const newTotal = newItems.reduce((sum, p) => sum + (parseFloat(p.price) || 0) * (p.quantity || 1), 0);
   const prevTotal = prevItems.reduce((sum, p) => sum + (parseFloat(p.price) || 0) * (p.quantity || 1), 0);
@@ -526,8 +561,14 @@ STEP 2 — COMBINE OR SEPARATE (only if there is a previous order):
 → If customer says NO separate → use only new items and ${newTotal.toLocaleString()} هەزار as total
 
 STEP 3 — NAME, PHONE, ADDRESS:
-→ If not already given, ask all three in ONE message: "بەڕێزم، ناو و ژمارەی تەلەفون و ناونیشانەکەت بنێرە بێزەحمەت 😊"
-→ If combining with previous order and address already known, ask: "ئایا ناونیشانەکەت هەمان شوێنەی پێشووە؟"
+${knownName && knownPhone && knownAddress
+  ? `✅ ALREADY KNOWN FROM PREVIOUS ORDER — DO NOT ASK AGAIN:
+ناو: ${knownName}
+ژمارە: ${knownPhone}
+ناونیشان: ${knownAddress}
+Use these directly in the confirmation.`
+  : `→ Ask all three in ONE message: "بەڕێزم، ناو و ژمارەی تەلەفون و ناونیشانەکەت بنێرە بێزەحمەت 😊"`
+}
 
 STEP 4 — CONFIRM ORDER (only when you have: size + combine decision + name + phone + address):
 → Send EXACTLY this, nothing more, nothing less:
