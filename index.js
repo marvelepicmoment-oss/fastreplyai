@@ -4,7 +4,7 @@ const path = require("path");
 const { createClient } = require("@supabase/supabase-js");
 
 const app = express();
-app.use(express.json());
+app.use(express.json({ limit: "10mb" }));
 
 // ── Admin panel ───────────────────────────────────────────────────────────────
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || "fastreply2026";
