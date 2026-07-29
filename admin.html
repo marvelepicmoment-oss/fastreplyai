@@ -259,10 +259,11 @@ function editProduct(id, name, price, sizes, colors, postId, imageUrl) {
         <input id="edit-sizes-${id}" value="${sizes}" placeholder="قەبارەکان" style="background:#1a1a1a;border:1px solid #444;border-radius:8px;padding:8px 12px;color:#fff;font-size:14px;width:100%" />
         <input id="edit-colors-${id}" value="${colors}" placeholder="رەنگەکان" style="background:#1a1a1a;border:1px solid #444;border-radius:8px;padding:8px 12px;color:#fff;font-size:14px;width:100%" />
         <input id="edit-link-${id}" value="${postId ? 'https://www.instagram.com/p/' + postId + '/' : ''}" placeholder="لینکی ئینستەگرام (ئەگەر دەتەوێت بگۆڕیت)" style="background:#1a1a1a;border:1px solid #444;border-radius:8px;padding:8px 12px;color:#fff;font-size:14px;width:100%;direction:ltr" />
-        <div style="font-size:12px;color:#555;margin-top:-4px">وێنەی نوێ — ئەگەر دەتەوێت بگۆڕیت</div>
-        <div id="edit-upload-${id}" onclick="document.getElementById('edit-img-input-${id}').click()" style="background:#111;border:2px dashed #333;border-radius:8px;min-height:80px;display:flex;align-items:center;justify-content:center;cursor:pointer;position:relative;overflow:hidden">
-          <input type="file" id="edit-img-input-${id}" accept="image/*" style="position:absolute;inset:0;opacity:0;cursor:pointer;width:100%;height:100%" onchange="handleEditImage(event,'${id}')" onclick="event.stopPropagation()" />
-          ${imageUrl ? `<img id="edit-preview-${id}" src="${imageUrl}" style="max-width:100%;max-height:160px;border-radius:6px" />` : `<span id="edit-preview-${id}" style="color:#555;font-size:13px">📷 کلیک بکە بۆ هەڵبژاردنی وێنە</span>`}
+        <div style="font-size:12px;color:#555;margin-top:-4px">وێنەکان — کلیک بکە بەسەر + بۆ زیادکردنی وێنەی نوێ</div>
+        <input type="file" id="edit-img-input-${id}" accept="image/*" style="display:none" onchange="handleEditImage(event,'${id}')" />
+        <div id="edit-previews-${id}" style="display:flex;flex-wrap:wrap;gap:8px;margin-top:6px;align-items:center">
+          ${imageUrl ? `<div style="position:relative;width:70px;height:70px;flex-shrink:0"><img src="${imageUrl}" style="width:70px;height:70px;object-fit:cover;border-radius:8px;border:1px solid #333" /></div>` : ''}
+          <div onclick="document.getElementById('edit-img-input-${id}').click()" style="width:70px;height:70px;border:2px dashed #444;border-radius:8px;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:28px;color:#555;flex-shrink:0">+</div>
         </div>
         <div style="display:flex;gap:8px;margin-top:4px">
           <button onclick="saveProduct('${id}')" style="flex:1;padding:8px;background:#6c63ff;border:none;border-radius:8px;color:#fff;cursor:pointer;font-size:14px">پاشەکەوتکردن ✅</button>
@@ -276,22 +277,30 @@ function editProduct(id, name, price, sizes, colors, postId, imageUrl) {
 function handleEditImage(event, id) {
   const file = event.target.files[0];
   if (!file) return;
-  editImageMime[id] = file.type;
+  if (!editImageBase64[id]) editImageBase64[id] = [];
+  if (!editImageMime[id]) editImageMime[id] = [];
   const reader = new FileReader();
   reader.onload = (e) => {
-    editImageBase64[id] = e.target.result.split(',')[1];
-    const preview = document.getElementById('edit-preview-' + id);
-    if (preview.tagName === 'IMG') {
-      preview.src = e.target.result;
-    } else {
-      const img = document.createElement('img');
-      img.src = e.target.result;
-      img.style = 'max-width:100%;max-height:160px;border-radius:6px';
-      img.id = 'edit-preview-' + id;
-      preview.replaceWith(img);
-    }
+    editImageBase64[id].push(e.target.result.split(',')[1]);
+    editImageMime[id].push(file.type);
+    const previews = document.getElementById('edit-previews-' + id);
+    const plusBtn = previews.querySelector('div:last-child');
+    const wrapper = document.createElement('div');
+    wrapper.style = 'position:relative;width:70px;height:70px;flex-shrink:0';
+    const img = document.createElement('img');
+    img.src = e.target.result;
+    img.style = 'width:70px;height:70px;object-fit:cover;border-radius:8px;border:1px solid #333';
+    const removeBtn = document.createElement('div');
+    const idx = editImageBase64[id].length - 1;
+    removeBtn.innerHTML = '✕';
+    removeBtn.style = 'position:absolute;top:-6px;right:-6px;background:#3a1a1a;border:1px solid #5a2d2d;color:#cf6f6f;border-radius:50%;width:18px;height:18px;font-size:11px;display:flex;align-items:center;justify-content:center;cursor:pointer';
+    removeBtn.onclick = () => { editImageBase64[id].splice(idx, 1); editImageMime[id].splice(idx, 1); wrapper.remove(); };
+    wrapper.appendChild(img);
+    wrapper.appendChild(removeBtn);
+    previews.insertBefore(wrapper, plusBtn);
   };
   reader.readAsDataURL(file);
+  event.target.value = '';
 }
 
 async function saveProduct(id) {
@@ -302,6 +311,10 @@ async function saveProduct(id) {
   const link = document.getElementById('edit-link-' + id).value.trim();
   const postId = link ? extractPostId(link) : null;
 
+  const images = editImageBase64[id] && editImageBase64[id].length > 0
+    ? editImageBase64[id].map((b, i) => ({ base64: b, mimeType: editImageMime[id][i] }))
+    : null;
+
   const res = await fetch('/admin/product/' + id, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json', 'Authorization': token },
@@ -311,8 +324,7 @@ async function saveProduct(id) {
       sizes,
       colors,
       post_id: postId || undefined,
-      image_base64: editImageBase64[id] || null,
-      image_mime_type: editImageMime[id] || null
+      images: images
     })
   });
   const data = await res.json();
