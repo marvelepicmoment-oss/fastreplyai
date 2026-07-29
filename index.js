@@ -88,6 +88,7 @@ app.post("/admin/product", requireAdmin, async (req, res) => {
     client_id,
     product_name,
     post_id,
+    post_url: post_link || null,
     price: price.toString(),
     currency: "IQD",
     sizes: sizes || null,
@@ -114,20 +115,27 @@ app.patch("/admin/product/:id", requireAdmin, async (req, res) => {
 
   // Upload new image if provided
   if (image_base64 && image_mime_type) {
+    console.log("PATCH: Uploading image, size:", image_base64.length, "type:", image_mime_type);
     try {
       const ext = image_mime_type.split("/")[1] || "jpg";
       const fileName = `${req.params.id}-${Date.now()}.${ext}`;
       const buffer = Buffer.from(image_base64, "base64");
-      const { error: uploadError } = await supabase.storage
+      const { data: uploadData, error: uploadError } = await supabase.storage
         .from("product-images")
         .upload(fileName, buffer, { contentType: image_mime_type, upsert: true });
+      console.log("PATCH upload result:", JSON.stringify(uploadData), JSON.stringify(uploadError));
       if (!uploadError) {
         const { data: urlData } = supabase.storage.from("product-images").getPublicUrl(fileName);
         updates.image_url = urlData.publicUrl;
+        console.log("PATCH image URL:", updates.image_url);
+      } else {
+        console.error("PATCH image upload error:", uploadError.message, uploadError);
       }
     } catch (e) {
-      console.error("Image upload error:", e.message);
+      console.error("PATCH image upload exception:", e.message, e.stack);
     }
+  } else {
+    console.log("PATCH: No image provided, image_base64:", !!image_base64, "image_mime_type:", !!image_mime_type);
   }
 
   const { error } = await supabase.from("products").update(updates).eq("id", req.params.id);
