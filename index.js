@@ -60,22 +60,28 @@ app.post("/admin/product", requireAdmin, async (req, res) => {
   // Upload image to Supabase Storage if provided
   let image_url = null;
   if (image_base64 && image_mime_type) {
+    console.log("Uploading image, size:", image_base64.length, "type:", image_mime_type);
     try {
       const ext = image_mime_type.split("/")[1] || "jpg";
       const fileName = `${post_id}-${Date.now()}.${ext}`;
       const buffer = Buffer.from(image_base64, "base64");
-      const { error: uploadError } = await supabase.storage
+      console.log("Uploading to bucket product-images, file:", fileName);
+      const { data: uploadData, error: uploadError } = await supabase.storage
         .from("product-images")
         .upload(fileName, buffer, { contentType: image_mime_type, upsert: true });
+      console.log("Upload result:", JSON.stringify(uploadData), JSON.stringify(uploadError));
       if (!uploadError) {
         const { data: urlData } = supabase.storage.from("product-images").getPublicUrl(fileName);
         image_url = urlData.publicUrl;
+        console.log("Image URL:", image_url);
       } else {
-        console.error("Image upload error:", uploadError.message);
+        console.error("Image upload error:", uploadError.message, uploadError);
       }
     } catch (e) {
-      console.error("Image upload exception:", e.message);
+      console.error("Image upload exception:", e.message, e.stack);
     }
+  } else {
+    console.log("No image provided, image_base64:", !!image_base64, "image_mime_type:", !!image_mime_type);
   }
 
   const { error } = await supabase.from("products").insert({
