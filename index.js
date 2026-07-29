@@ -1,9 +1,82 @@
 const express = require("express");
 const axios = require("axios");
+const path = require("path");
 const { createClient } = require("@supabase/supabase-js");
 
 const app = express();
 app.use(express.json());
+
+// ── Admin panel ───────────────────────────────────────────────────────────────
+const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || "fastreply2026";
+const ADMIN_TOKEN = Buffer.from(ADMIN_PASSWORD).toString("base64");
+
+app.get("/admin", (req, res) => {
+  res.sendFile(path.join(__dirname, "admin.html"));
+});
+
+app.post("/admin/login", (req, res) => {
+  const { password } = req.body;
+  if (password === ADMIN_PASSWORD) {
+    res.json({ success: true, token: ADMIN_TOKEN });
+  } else {
+    res.json({ success: false });
+  }
+});
+
+function requireAdmin(req, res, next) {
+  if (req.headers.authorization === ADMIN_TOKEN) return next();
+  res.status(401).json({ error: "Unauthorized" });
+}
+
+app.get("/admin/products", requireAdmin, async (req, res) => {
+  const { data, error } = await supabase
+    .from("products")
+    .select("*")
+    .order("created_at", { ascending: false });
+  if (error) return res.json({ error: error.message });
+  res.json({ products: data });
+});
+
+app.post("/admin/product", requireAdmin, async (req, res) => {
+  const { product_name, post_id, post_link, price, sizes, colors } = req.body;
+
+  // Try to get media_id from Instagram API
+  let media_id = null;
+  try {
+    const igRes = await axios.get(
+      `https://graph.instagram.com/v21.0/me/media`,
+      { params: { fields: "id,shortcode", access_token: IG_ACCESS_TOKEN } }
+    );
+    const match = igRes.data.data?.find(m => m.shortcode === post_id);
+    if (match) media_id = match.id;
+  } catch (e) {
+    console.log("Could not fetch media_id:", e.message);
+  }
+
+  // Get client_id from DB (first client for now)
+  const { data: clients } = await supabase.from("clients").select("id").limit(1);
+  const client_id = clients?.[0]?.id;
+
+  const { error } = await supabase.from("products").insert({
+    client_id,
+    product_name,
+    post_id,
+    price: price.toString(),
+    currency: "IQD",
+    sizes: sizes || null,
+    colors: colors || null,
+    media_id: media_id || null
+  });
+
+  if (error) return res.json({ success: false, error: error.message });
+  res.json({ success: true });
+});
+
+app.delete("/admin/product/:id", requireAdmin, async (req, res) => {
+  const { error } = await supabase.from("products").delete().eq("id", req.params.id);
+  if (error) return res.json({ success: false, error: error.message });
+  res.json({ success: true });
+});
 
 // ── Config ────────────────────────────────────────────────────────────────────
 const VERIFY_TOKEN = process.env.VERIFY_TOKEN || "fastreplyai_secret";

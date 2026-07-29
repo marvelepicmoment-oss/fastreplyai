@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="ku" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FastReplyAI - زیادکردنی بەرھەم</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: Arial, sans-serif; background: #0f0f0f; color: #fff; min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 20px; }
+  .card { background: #1a1a1a; border-radius: 16px; padding: 32px; width: 100%; max-width: 500px; border: 1px solid #2a2a2a; }
+  h1 { font-size: 22px; margin-bottom: 8px; color: #fff; }
+  .sub { color: #888; font-size: 14px; margin-bottom: 28px; }
+  label { display: block; font-size: 13px; color: #aaa; margin-bottom: 6px; margin-top: 16px; }
+  input, textarea { width: 100%; background: #111; border: 1px solid #333; border-radius: 10px; padding: 12px 14px; color: #fff; font-size: 15px; outline: none; transition: border 0.2s; }
+  input:focus, textarea:focus { border-color: #6c63ff; }
+  textarea { resize: vertical; min-height: 80px; direction: ltr; }
+  .hint { font-size: 12px; color: #555; margin-top: 4px; }
+  button { width: 100%; margin-top: 28px; padding: 14px; background: #6c63ff; border: none; border-radius: 10px; color: #fff; font-size: 16px; font-weight: bold; cursor: pointer; transition: background 0.2s; }
+  button:hover { background: #5a52d5; }
+  button:disabled { background: #333; cursor: not-allowed; }
+  .msg { margin-top: 16px; padding: 12px 16px; border-radius: 10px; font-size: 14px; text-align: center; display: none; }
+  .msg.success { background: #1a3a1a; border: 1px solid #2d5a2d; color: #6fcf6f; display: block; }
+  .msg.error { background: #3a1a1a; border: 1px solid #5a2d2d; color: #cf6f6f; display: block; }
+  .products-list { margin-top: 32px; border-top: 1px solid #2a2a2a; padding-top: 24px; }
+  .products-list h2 { font-size: 16px; color: #aaa; margin-bottom: 16px; }
+  .product-item { background: #111; border: 1px solid #2a2a2a; border-radius: 10px; padding: 14px; margin-bottom: 10px; display: flex; justify-content: space-between; align-items: center; }
+  .product-info { flex: 1; }
+  .product-name { font-size: 15px; font-weight: bold; }
+  .product-meta { font-size: 12px; color: #666; margin-top: 4px; }
+  .delete-btn { background: #3a1a1a; border: 1px solid #5a2d2d; color: #cf6f6f; border-radius: 8px; padding: 6px 12px; cursor: pointer; font-size: 13px; }
+  .delete-btn:hover { background: #5a2d2d; }
+  #login-section { }
+  #main-section { display: none; }
+</style>
+</head>
+<body>
+<div class="card">
+
+  <!-- LOGIN -->
+  <div id="login-section">
+    <h1>🔐 FastReplyAI</h1>
+    <p class="sub">تکایە وشەی نهێنیت بنووسە</p>
+    <label>وشەی نهێنی</label>
+    <input type="password" id="password-input" placeholder="password" onkeydown="if(event.key==='Enter')login()" />
+    <button onclick="login()">چوونەژوورەوە</button>
+    <div id="login-msg" class="msg"></div>
+  </div>
+
+  <!-- MAIN -->
+  <div id="main-section">
+    <h1>➕ زیادکردنی بەرھەم</h1>
+    <p class="sub">زانیاری بەرھەمەکە بنووسە</p>
+
+    <label>ناوی بەرھەم (بەرھەم / Product Name)</label>
+    <input type="text" id="product_name" placeholder="مثال: هودی، تیشرت، 3aba..." />
+
+    <label>لینکی پۆستی ئینستەگرام</label>
+    <input type="text" id="post_link" placeholder="https://www.instagram.com/p/..." />
+    <p class="hint">لینکەکە بنووسە، ID بە خۆکاری دەردەچێت</p>
+
+    <label>نرخ (بە هەزار دینار)</label>
+    <input type="number" id="price" placeholder="مثال: 35" />
+
+    <label>قەبارەکان (Size)</label>
+    <input type="text" id="sizes" placeholder="S, M, L, XL  یان  Freesize" />
+
+    <label>رەنگەکان (Colors) — ئەگەر هەیە</label>
+    <input type="text" id="colors" placeholder="سوور، سەوز، مارۆنی  یان  sawz, swr, maroni" />
+
+    <button onclick="addProduct()" id="add-btn">زیادکردن ✅</button>
+    <div id="add-msg" class="msg"></div>
+
+    <div class="products-list">
+      <h2>📦 بەرھەمە زیادکراوەکان</h2>
+      <div id="products-container">چاوەڕێ بکە...</div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+let token = null;
+
+function showMsg(id, text, type) {
+  const el = document.getElementById(id);
+  el.textContent = text;
+  el.className = 'msg ' + type;
+}
+
+function extractPostId(url) {
+  const match = url.match(/instagram\.com\/(?:p|reel)\/([A-Za-z0-9_-]+)/);
+  return match ? match[1] : null;
+}
+
+async function login() {
+  const pwd = document.getElementById('password-input').value;
+  const res = await fetch('/admin/login', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ password: pwd })
+  });
+  const data = await res.json();
+  if (data.success) {
+    token = data.token;
+    document.getElementById('login-section').style.display = 'none';
+    document.getElementById('main-section').style.display = 'block';
+    loadProducts();
+  } else {
+    showMsg('login-msg', 'وشەی نهێنی هەڵەیە ❌', 'error');
+  }
+}
+
+async function addProduct() {
+  const name = document.getElementById('product_name').value.trim();
+  const link = document.getElementById('post_link').value.trim();
+  const price = document.getElementById('price').value.trim();
+  const sizes = document.getElementById('sizes').value.trim();
+  const colors = document.getElementById('colors').value.trim();
+
+  if (!name || !link || !price) {
+    showMsg('add-msg', 'تکایە ناو، لینک و نرخ پڕبکەرەوە', 'error');
+    return;
+  }
+
+  const postId = extractPostId(link);
+  if (!postId) {
+    showMsg('add-msg', 'لینکی ئینستەگرام هەڵەیە', 'error');
+    return;
+  }
+
+  document.getElementById('add-btn').disabled = true;
+
+  const res = await fetch('/admin/product', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Authorization': token },
+    body: JSON.stringify({ product_name: name, post_id: postId, post_link: link, price, sizes, colors })
+  });
+  const data = await res.json();
+
+  document.getElementById('add-btn').disabled = false;
+
+  if (data.success) {
+    showMsg('add-msg', 'بەرھەم زیادکرا ✅', 'success');
+    document.getElementById('product_name').value = '';
+    document.getElementById('post_link').value = '';
+    document.getElementById('price').value = '';
+    document.getElementById('sizes').value = '';
+    document.getElementById('colors').value = '';
+    loadProducts();
+  } else {
+    showMsg('add-msg', 'هەڵە: ' + (data.error || 'نەزانراو'), 'error');
+  }
+}
+
+async function loadProducts() {
+  const res = await fetch('/admin/products', { headers: { 'Authorization': token } });
+  const data = await res.json();
+  const container = document.getElementById('products-container');
+  if (!data.products || data.products.length === 0) {
+    container.innerHTML = '<p style="color:#555;font-size:13px">هیچ بەرھەمێک نەدۆزرایەوە</p>';
+    return;
+  }
+  container.innerHTML = data.products.map(p => `
+    <div class="product-item">
+      <div class="product-info">
+        <div class="product-name">${p.product_name}</div>
+        <div class="product-meta">${p.price} هەزار${p.sizes ? ' · ' + p.sizes : ''}${p.colors ? ' · ' + p.colors : ''}</div>
+        <div class="product-meta" style="color:#444">${p.post_id}</div>
+      </div>
+      <button class="delete-btn" onclick="deleteProduct('${p.id}')">سڕینەوە</button>
+    </div>
+  `).join('');
+}
+
+async function deleteProduct(id) {
+  if (!confirm('دڵنیایت لە سڕینەوەی ئەم بەرھەمە؟')) return;
+  await fetch('/admin/product/' + id, { method: 'DELETE', headers: { 'Authorization': token } });
+  loadProducts();
+}
+</script>
+</body>
+</html>
