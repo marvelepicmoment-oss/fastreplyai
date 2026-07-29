@@ -94,6 +94,15 @@ app.post("/admin/product", requireAdmin, async (req, res) => {
   res.json({ success: true });
 });
 
+app.patch("/admin/product/:id", requireAdmin, async (req, res) => {
+  const { product_name, price, sizes, colors } = req.body;
+  const { error } = await supabase.from("products")
+    .update({ product_name, price: price.toString(), sizes: sizes || null, colors: colors || null })
+    .eq("id", req.params.id);
+  if (error) return res.json({ success: false, error: error.message });
+  res.json({ success: true });
+});
+
 app.delete("/admin/product/:id", requireAdmin, async (req, res) => {
   const { error } = await supabase.from("products").delete().eq("id", req.params.id);
   if (error) return res.json({ success: false, error: error.message });

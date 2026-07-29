@@ -213,7 +213,7 @@ async function loadProducts() {
     return;
   }
   container.innerHTML = data.products.map(p => `
-    <div class="product-item">
+    <div class="product-item" id="product-${p.id}">
       ${p.image_url
         ? `<img class="product-thumb" src="${p.image_url}" alt="${p.product_name}" />`
         : `<div class="product-thumb-placeholder">📦</div>`}
@@ -222,7 +222,10 @@ async function loadProducts() {
         <div class="product-meta">${p.price} هەزار${p.sizes ? ' · ' + p.sizes : ''}${p.colors ? ' · ' + p.colors : ''}</div>
         <div class="product-meta" style="color:#444">${p.post_id}</div>
       </div>
-      <button class="delete-btn" onclick="deleteProduct('${p.id}')">سڕینەوە</button>
+      <div style="display:flex;flex-direction:column;gap:6px;flex-shrink:0">
+        <button class="delete-btn" style="background:#1a2a3a;border-color:#2d4a5a;color:#6fb3cf" onclick="editProduct('${p.id}','${p.product_name}','${p.price}','${(p.sizes||'').replace(/'/g,"\\'")}','${(p.colors||'').replace(/'/g,"\\'")}')">دەستکاری</button>
+        <button class="delete-btn" onclick="deleteProduct('${p.id}')">سڕینەوە</button>
+      </div>
     </div>
   `).join('');
 }
@@ -231,6 +234,42 @@ async function deleteProduct(id) {
   if (!confirm('دڵنیایت لە سڕینەوەی ئەم بەرھەمە؟')) return;
   await fetch('/admin/product/' + id, { method: 'DELETE', headers: { 'Authorization': token } });
   loadProducts();
+}
+
+function editProduct(id, name, price, sizes, colors) {
+  // Replace product item with inline edit form
+  const el = document.getElementById('product-' + id);
+  el.innerHTML = `
+    <div style="width:100%">
+      <div style="font-size:13px;color:#aaa;margin-bottom:10px">دەستکاریکردن ✏️</div>
+      <div style="display:flex;flex-direction:column;gap:8px">
+        <input id="edit-name-${id}" value="${name}" placeholder="ناوی بەرھەم" style="background:#1a1a1a;border:1px solid #444;border-radius:8px;padding:8px 12px;color:#fff;font-size:14px;width:100%" />
+        <input id="edit-price-${id}" value="${price}" placeholder="نرخ" type="number" style="background:#1a1a1a;border:1px solid #444;border-radius:8px;padding:8px 12px;color:#fff;font-size:14px;width:100%" />
+        <input id="edit-sizes-${id}" value="${sizes}" placeholder="قەبارەکان" style="background:#1a1a1a;border:1px solid #444;border-radius:8px;padding:8px 12px;color:#fff;font-size:14px;width:100%" />
+        <input id="edit-colors-${id}" value="${colors}" placeholder="رەنگەکان" style="background:#1a1a1a;border:1px solid #444;border-radius:8px;padding:8px 12px;color:#fff;font-size:14px;width:100%" />
+        <div style="display:flex;gap:8px;margin-top:4px">
+          <button onclick="saveProduct('${id}')" style="flex:1;padding:8px;background:#6c63ff;border:none;border-radius:8px;color:#fff;cursor:pointer;font-size:14px">پاشەکەوتکردن ✅</button>
+          <button onclick="loadProducts()" style="flex:1;padding:8px;background:#222;border:1px solid #444;border-radius:8px;color:#aaa;cursor:pointer;font-size:14px">هەڵوەشاندنەوە</button>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+async function saveProduct(id) {
+  const name = document.getElementById('edit-name-' + id).value.trim();
+  const price = document.getElementById('edit-price-' + id).value.trim();
+  const sizes = document.getElementById('edit-sizes-' + id).value.trim();
+  const colors = document.getElementById('edit-colors-' + id).value.trim();
+
+  const res = await fetch('/admin/product/' + id, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', 'Authorization': token },
+    body: JSON.stringify({ product_name: name, price, sizes, colors })
+  });
+  const data = await res.json();
+  if (data.success) loadProducts();
+  else alert('هەڵە: ' + (data.error || 'نەزانراو'));
 }
 </script>
 </body>
