@@ -481,16 +481,14 @@ async function handleOrder(senderId, client, messageText) {
   const newItems = cartItems.filter(p => !p.ordered);
   const prevItems = cartItems.filter(p => p.ordered);
   // Also check orders table as fallback in case markCartOrdered failed
-  const { data: existingOrderRow } = await supabase
+  const { data: existingOrderRows } = await supabase
     .from("orders")
     .select("status")
     .eq("client_id", client.id)
     .eq("customer_ig_id", senderId)
-    .eq("status", "ordered")
-    .limit(1)
-    .single();
-  const hasPreviousOrder = prevItems.length > 0 || !!existingOrderRow;
-  console.log(`hasPreviousOrder: ${hasPreviousOrder}, prevItems: ${prevItems.length}, existingOrderRow: ${!!existingOrderRow}`);
+    .eq("status", "ordered");
+  const hasPreviousOrder = prevItems.length > 0 || (existingOrderRows && existingOrderRows.length > 0);
+  console.log(`hasPreviousOrder: ${hasPreviousOrder}, prevItems: ${prevItems.length}, existingOrderRows: ${existingOrderRows?.length}`);
 
   // Extract known customer info from history
   const historyText = history.map(m => m.content).join("\n");
@@ -574,14 +572,16 @@ STEP 2 — COMBINE OR SEPARATE (only if there is a previous order):
 → If customer says YES combine → use combined items and ${combinedTotal.toLocaleString()} هەزار as total
 → If customer says NO separate → use only new items and ${newTotal.toLocaleString()} هەزار as total
 
-STEP 3 — NAME, PHONE, ADDRESS:
+STEP 3 — SIZE + NAME + PHONE + ADDRESS (all in ONE message):
 ${knownName && knownPhone && knownAddress
-  ? `✅ ALREADY KNOWN FROM PREVIOUS ORDER — DO NOT ASK AGAIN:
+  ? `✅ NAME/PHONE/ADDRESS ALREADY KNOWN — DO NOT ASK AGAIN:
 ناو: ${knownName}
 ژمارە: ${knownPhone}
 ناونیشان: ${knownAddress}
-Use these directly in the confirmation.`
-  : `→ Ask all three in ONE message: "بەڕێزم، ناو و ژمارەی تەلەفون و ناونیشانەکەت بنێرە بێزەحمەت 😊"`
+Only ask for size if not known yet: "چ قەبارەیەک دەتەوێت؟ (S، M، L، XL)"`
+  : `→ Ask size AND name/phone/address together in ONE message:
+"بەڕێزم، چ قەبارەیەک دەتەوێت؟ (S، M، L، XL) — و ناو، ژمارەی تەلەفون و ناونیشانەکەتیش بنێرە بێزەحمەت 😊"
+→ NEVER ask size in one message and name/phone/address in another — always together.`
 }
 
 STEP 4 — CONFIRM ORDER (only when you have: size + combine decision + name + phone + address):
@@ -609,14 +609,26 @@ STRICT RULES:
 
   // If Claude wrote the confirmation, strip any wrong closing line and add ours
   if (reply.includes("داواکارییەکەت وەرگیرا")) {
+    // Strip any closing line Claude wrote and replace with ours
     reply = reply
       .split("\n")
-      .filter(line => !line.includes("دوکانەکە") && !line.includes("the store") && !line.includes("will contact"))
+      .filter(line => {
+        const l = line.trim();
+        if (!l) return true;
+        // Remove any line that is a closing/contact phrase
+        if (l.includes("دوکانەکە")) return false;
+        if (l.includes("the store")) return false;
+        if (l.includes("will contact")) return false;
+        if (l.includes("دەمانێینێت")) return false;
+        if (l.includes("پەیوەندی") && !l.includes("زووترین کاتدا پەیوەندیت پێوە دەکەین")) return false;
+        if (l.includes("دەگاتە")) return false;
+        if (l.includes("بەزووترین")) return false;
+        return true;
+      })
       .join("\n")
       .trimEnd();
-    if (!reply.includes("زووترین کاتدا پەیوەندیت پێوە دەکەین")) {
-      reply += "\nزووترین کاتدا پەیوەندیت پێوە دەکەین 😊";
-    }
+    // Always add our exact closing line
+    reply += "\nزووترین کاتدا پەیوەندیت پێوە دەکەین 😊";
   }
 
   await sendDM(senderId, reply);
