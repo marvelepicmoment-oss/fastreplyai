@@ -560,23 +560,45 @@ async function handleImageQuery(senderId, client, imageUrl, messageText) {
     return;
   }
 
-  const productList = products.map(p =>
-    `- ${p.product_name}: ${p.price} ${p.currency}${p.colors ? ", Colors: " + p.colors : ""}${p.sizes ? ", Sizes: " + p.sizes : ""}`
-  ).join("\n");
-
   const systemPrompt = `You are a helpful shopping assistant for ${client.shop_name}, an Instagram shop. Always reply in ${getLangLabel(client.language)}. Be warm, friendly, and natural. Keep replies under 3 sentences.`;
 
-  const userContent = `A customer sent an image. Here are the shop's products:\n${productList}\n\nBased on image URL (${imageUrl}) and message "${messageText}", match to a product and reply with price and details. If no match, say you will check and get back to them.`;
+  // Build message content with both the shared image and stored product images
+  const productsWithImages = products.filter(p => p.image_url);
+  const productsWithoutImages = products.filter(p => !p.image_url);
+
+  const textList = products.map(p =>
+    `- ${p.product_name} (ID:${p.post_id}): ${p.price} ${p.currency}${p.colors ? ", Colors: " + p.colors : ""}${p.sizes ? ", Sizes: " + p.sizes : ""}`
+  ).join("\n");
+
+  const userContent = [
+    {
+      type: "text",
+      text: `A customer shared this post image. Compare it visually to our product images below and identify which product it is.\n\nOur products:\n${textList}\n\nCustomer message: "${messageText || "shared a post"}"\n\nIf you can identify the product, reply with its price and details. If not, say you will check.`
+    },
+    {
+      type: "image",
+      source: { type: "url", url: imageUrl }
+    },
+    ...productsWithImages.flatMap(p => [
+      { type: "text", text: `Product image for "${p.product_name}" (${p.price} ${p.currency}):` },
+      { type: "image", source: { type: "url", url: p.image_url } }
+    ])
+  ];
 
   const history = await getConversationHistory(client.id, senderId);
   const reply = await callClaude(systemPrompt, [...history, { role: "user", content: userContent }]);
   await sendDM(senderId, reply);
   await saveMessage(client.id, senderId, "assistant", reply);
 
-  if (reply.includes("check") || reply.includes("get back") || reply.includes("أتحقق") || reply.includes("دەبینم")) {
-    await flagForHumanReply(client.id, senderId, "Image not matched to product");
+  // Try to match reply to a product and add to cart
+  const matchedProduct = products.find(p =>
+    reply.includes(p.product_name) || reply.includes(p.price)
+  );
+  if (matchedProduct) {
+    await addToCart(client.id, senderId, matchedProduct);
+    await saveOrder(client.id, senderId, matchedProduct.id, "interested");
   } else {
-    await saveOrder(client.id, senderId, null, "interested");
+    await flagForHumanReply(client.id, senderId, "Image not matched to product");
   }
 }
 
