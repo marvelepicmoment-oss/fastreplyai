@@ -223,7 +223,7 @@ async function loadProducts() {
         <div class="product-meta" style="color:#444">${p.post_id}</div>
       </div>
       <div style="display:flex;flex-direction:column;gap:6px;flex-shrink:0">
-        <button class="delete-btn" style="background:#1a2a3a;border-color:#2d4a5a;color:#6fb3cf" onclick="editProduct('${p.id}','${p.product_name}','${p.price}','${(p.sizes||'').replace(/'/g,"\\'")}','${(p.colors||'').replace(/'/g,"\\'")}')">دەستکاری</button>
+        <button class="delete-btn" style="background:#1a2a3a;border-color:#2d4a5a;color:#6fb3cf" onclick="editProduct('${p.id}','${p.product_name}','${p.price}','${(p.sizes||'').replace(/'/g,"\\'")}','${(p.colors||'').replace(/'/g,"\\'")}','${p.post_id||''}','${p.image_url||''}')">دەستکاری</button>
         <button class="delete-btn" onclick="deleteProduct('${p.id}')">سڕینەوە</button>
       </div>
     </div>
@@ -236,8 +236,10 @@ async function deleteProduct(id) {
   loadProducts();
 }
 
-function editProduct(id, name, price, sizes, colors) {
-  // Replace product item with inline edit form
+let editImageBase64 = {};
+let editImageMime = {};
+
+function editProduct(id, name, price, sizes, colors, postId, imageUrl) {
   const el = document.getElementById('product-' + id);
   el.innerHTML = `
     <div style="width:100%">
@@ -247,6 +249,12 @@ function editProduct(id, name, price, sizes, colors) {
         <input id="edit-price-${id}" value="${price}" placeholder="نرخ" type="number" style="background:#1a1a1a;border:1px solid #444;border-radius:8px;padding:8px 12px;color:#fff;font-size:14px;width:100%" />
         <input id="edit-sizes-${id}" value="${sizes}" placeholder="قەبارەکان" style="background:#1a1a1a;border:1px solid #444;border-radius:8px;padding:8px 12px;color:#fff;font-size:14px;width:100%" />
         <input id="edit-colors-${id}" value="${colors}" placeholder="رەنگەکان" style="background:#1a1a1a;border:1px solid #444;border-radius:8px;padding:8px 12px;color:#fff;font-size:14px;width:100%" />
+        <input id="edit-link-${id}" value="${postId ? 'https://www.instagram.com/p/' + postId + '/' : ''}" placeholder="لینکی ئینستەگرام (ئەگەر دەتەوێت بگۆڕیت)" style="background:#1a1a1a;border:1px solid #444;border-radius:8px;padding:8px 12px;color:#fff;font-size:14px;width:100%;direction:ltr" />
+        <div style="font-size:12px;color:#555;margin-top:-4px">وێنەی نوێ — ئەگەر دەتەوێت بگۆڕیت</div>
+        <div id="edit-upload-${id}" onclick="document.getElementById('edit-img-input-${id}').click()" style="background:#111;border:2px dashed #333;border-radius:8px;min-height:80px;display:flex;align-items:center;justify-content:center;cursor:pointer;position:relative;overflow:hidden">
+          <input type="file" id="edit-img-input-${id}" accept="image/*" style="position:absolute;inset:0;opacity:0;cursor:pointer;width:100%;height:100%" onchange="handleEditImage(event,'${id}')" onclick="event.stopPropagation()" />
+          ${imageUrl ? `<img id="edit-preview-${id}" src="${imageUrl}" style="max-width:100%;max-height:160px;border-radius:6px" />` : `<span id="edit-preview-${id}" style="color:#555;font-size:13px">📷 کلیک بکە بۆ هەڵبژاردنی وێنە</span>`}
+        </div>
         <div style="display:flex;gap:8px;margin-top:4px">
           <button onclick="saveProduct('${id}')" style="flex:1;padding:8px;background:#6c63ff;border:none;border-radius:8px;color:#fff;cursor:pointer;font-size:14px">پاشەکەوتکردن ✅</button>
           <button onclick="loadProducts()" style="flex:1;padding:8px;background:#222;border:1px solid #444;border-radius:8px;color:#aaa;cursor:pointer;font-size:14px">هەڵوەشاندنەوە</button>
@@ -256,20 +264,56 @@ function editProduct(id, name, price, sizes, colors) {
   `;
 }
 
+function handleEditImage(event, id) {
+  const file = event.target.files[0];
+  if (!file) return;
+  editImageMime[id] = file.type;
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    editImageBase64[id] = e.target.result.split(',')[1];
+    const preview = document.getElementById('edit-preview-' + id);
+    if (preview.tagName === 'IMG') {
+      preview.src = e.target.result;
+    } else {
+      const img = document.createElement('img');
+      img.src = e.target.result;
+      img.style = 'max-width:100%;max-height:160px;border-radius:6px';
+      img.id = 'edit-preview-' + id;
+      preview.replaceWith(img);
+    }
+  };
+  reader.readAsDataURL(file);
+}
+
 async function saveProduct(id) {
   const name = document.getElementById('edit-name-' + id).value.trim();
   const price = document.getElementById('edit-price-' + id).value.trim();
   const sizes = document.getElementById('edit-sizes-' + id).value.trim();
   const colors = document.getElementById('edit-colors-' + id).value.trim();
+  const link = document.getElementById('edit-link-' + id).value.trim();
+  const postId = link ? extractPostId(link) : null;
 
   const res = await fetch('/admin/product/' + id, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json', 'Authorization': token },
-    body: JSON.stringify({ product_name: name, price, sizes, colors })
+    body: JSON.stringify({
+      product_name: name,
+      price,
+      sizes,
+      colors,
+      post_id: postId || undefined,
+      image_base64: editImageBase64[id] || null,
+      image_mime_type: editImageMime[id] || null
+    })
   });
   const data = await res.json();
-  if (data.success) loadProducts();
-  else alert('هەڵە: ' + (data.error || 'نەزانراو'));
+  if (data.success) {
+    delete editImageBase64[id];
+    delete editImageMime[id];
+    loadProducts();
+  } else {
+    alert('هەڵە: ' + (data.error || 'نەزانراو'));
+  }
 }
 </script>
 </body>

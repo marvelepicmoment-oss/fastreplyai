@@ -95,10 +95,36 @@ app.post("/admin/product", requireAdmin, async (req, res) => {
 });
 
 app.patch("/admin/product/:id", requireAdmin, async (req, res) => {
-  const { product_name, price, sizes, colors } = req.body;
-  const { error } = await supabase.from("products")
-    .update({ product_name, price: price.toString(), sizes: sizes || null, colors: colors || null })
-    .eq("id", req.params.id);
+  const { product_name, price, sizes, colors, post_id, image_base64, image_mime_type } = req.body;
+
+  const updates = {
+    product_name,
+    price: price.toString(),
+    sizes: sizes || null,
+    colors: colors || null
+  };
+
+  if (post_id) updates.post_id = post_id;
+
+  // Upload new image if provided
+  if (image_base64 && image_mime_type) {
+    try {
+      const ext = image_mime_type.split("/")[1] || "jpg";
+      const fileName = `${req.params.id}-${Date.now()}.${ext}`;
+      const buffer = Buffer.from(image_base64, "base64");
+      const { error: uploadError } = await supabase.storage
+        .from("product-images")
+        .upload(fileName, buffer, { contentType: image_mime_type, upsert: true });
+      if (!uploadError) {
+        const { data: urlData } = supabase.storage.from("product-images").getPublicUrl(fileName);
+        updates.image_url = urlData.publicUrl;
+      }
+    } catch (e) {
+      console.error("Image upload error:", e.message);
+    }
+  }
+
+  const { error } = await supabase.from("products").update(updates).eq("id", req.params.id);
   if (error) return res.json({ success: false, error: error.message });
   res.json({ success: true });
 });
