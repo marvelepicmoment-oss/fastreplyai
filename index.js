@@ -548,12 +548,26 @@ STRICT RULES:
 - NEVER say "the store will contact you" or "the store will calculate".
 - Keep replies short — 1-2 sentences max per step except the final confirmation.`;
 
-  const reply = await callClaude(systemPrompt, [...history, { role: "user", content: messageText }]);
+  let reply = await callClaude(systemPrompt, [...history, { role: "user", content: messageText }]);
+
+  // If Claude wrote the confirmation, strip any wrong closing line and add ours
+  if (reply.includes("داواکارییەکەت وەرگیرا")) {
+    reply = reply
+      .split("\n")
+      .filter(line => !line.includes("دوکانەکە") && !line.includes("the store") && !line.includes("will contact"))
+      .join("\n")
+      .trimEnd();
+    if (!reply.includes("زووترین کاتدا پەیوەندیت پێوە دەکەین")) {
+      reply += "\nزووترین کاتدا پەیوەندیت پێوە دەکەین 😊";
+    }
+  }
+
   await sendDM(senderId, reply);
   await saveMessage(client.id, senderId, "assistant", reply);
 
   // Mark as ordered only if reply contains the confirmation format
   if (reply.includes("داواکارییەکەت وەرگیرا")) {
+    console.log("Order confirmed, marking cart as ordered for:", senderId);
     await saveOrder(client.id, senderId, null, "ordered");
     await markCartOrdered(client.id, senderId);
     await saveMessage(client.id, senderId, "assistant", "[ORDER COMPLETED - ignore all prices and quantities mentioned before this line]");
